@@ -26,13 +26,13 @@ const (
 	ErrInvalidRoute CriteriaParserErr = "invalid route criteria"
 	// ErrInvalidCallCriteria is returned when a Criteria contains an invalid callCriteria
 	ErrInvalidCallCriteria CriteriaParserErr = "invalid response criteria"
-	httpGET                                  = "GET"
-	httpPOST                                 = "POST"
-	httpPUT                                  = "PUT"
-	httpDELETE                               = "DELETE"
-	httpPATCH                                = "PATCH"
-	requestCallCriteria                      = "request"
-	responseCallCriteria                     = "response"
+	httpGET                string            = "GET"
+	httpPOST               string            = "POST"
+	httpPUT                string            = "PUT"
+	httpDELETE             string            = "DELETE"
+	httpPATCH              string            = "PATCH"
+	requestCallCriteria    string            = "request"
+	responseCallCriteria   string            = "response"
 )
 
 var (

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/javiercbk/swago"
@@ -25,5 +26,8 @@ func main() {
 
 	`
 	r := strings.NewReader(goCode)
-	swago.AnalyzeReader("test.go", r)
+	err := swago.AnalyzeReader("test.go", r)
+	if err != nil {
+		fmt.Printf("error analyzing reader %v\n", err)
+	}
 }
