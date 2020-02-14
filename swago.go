@@ -9,8 +9,12 @@ import (
 	"strings"
 )
 
+type modelType string
+
 const (
-	modFile = "go.mod"
+	modFile                    = "go.mod"
+	MarshaledModel   modelType = "marshaled"
+	UnmarshaledModel modelType = "unmarshaled"
 )
 
 func isGoFile(fileName string) bool {
@@ -28,17 +32,67 @@ func listGoFiles(dir string) ([]string, error) {
 	return files, err
 }
 
-// CodeNavigator is able to navigate a project's code
-type CodeNavigator struct {
+// Route is a route handled found
+type Route struct {
+	File          string
+	Line          int
+	Pos           int
+	HTTPMethod    string
+	Path          string
+	HandlerPkg    string
+	HandlerName   string
+	RequestModel  Model
+	ResponseModel Model
+}
+
+// Model is a serializable struct found that can parse incoming requests or serialize outgoing responses
+type Model struct {
+	File           string
+	Line           int
+	Pos            int
+	Pkg            string
+	Type           string
+	MarshaledModel modelType
+}
+
+// CodeExplorer is able to navigate a project's code
+type CodeExplorer struct {
 	moduleName string
 	rootPath   string
 	goPath     string
 	logger     *log.Logger
 }
 
-// NewCodeNavigator creates a code navigator that scans a whole project
-func NewCodeNavigator(rootPath, goPath string, logger *log.Logger) (CodeNavigator, error) {
-	navigator := CodeNavigator{
+// FindRoutes attempts to find all the routes in a project folder
+func (e CodeExplorer) FindRoutes(criterias []RouteCriteria) ([]Route, error) {
+	routesFound := make([]Route, 0)
+	e.logger.Printf("searching all go files in directory %s recursively\n", e.rootPath)
+	projectGoFiles, err := listGoFiles(e.rootPath)
+	if err != nil {
+		return routesFound, err
+	}
+	for i := range projectGoFiles {
+		goFile := projectGoFiles[i]
+		e.logger.Printf("searching for routes in file %s\n", goFile)
+		routes, err := searchFileForRouteCriteria(goFile, criterias)
+		if err != nil {
+			e.logger.Printf("error searching for route criteria in file %s: %v\n", goFile, err)
+			return routesFound, err
+		}
+		if len(routes) > 0 {
+			routesFound = append(routesFound, routes...)
+		}
+	}
+	return routesFound, nil
+}
+
+// func (e CodeExplorer) findRequestModel(r *Route, criterias []RouteCriteria) error {
+// 	return nil
+// }
+
+// NewCodeExplorer creates a code navigator that scans a whole project
+func NewCodeExplorer(rootPath, goPath string, logger *log.Logger) (CodeExplorer, error) {
+	navigator := CodeExplorer{
 		rootPath: rootPath,
 		goPath:   goPath,
 		logger:   logger,

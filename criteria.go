@@ -3,6 +3,7 @@ package swago
 import (
 	"io"
 	"log"
+	"net/http"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -26,17 +27,12 @@ const (
 	ErrInvalidRoute CriteriaParserErr = "invalid route criteria"
 	// ErrInvalidCallCriteria is returned when a Criteria contains an invalid callCriteria
 	ErrInvalidCallCriteria CriteriaParserErr = "invalid response criteria"
-	httpGET                string            = "GET"
-	httpPOST               string            = "POST"
-	httpPUT                string            = "PUT"
-	httpDELETE             string            = "DELETE"
-	httpPATCH              string            = "PATCH"
 	requestCallCriteria    string            = "request"
 	responseCallCriteria   string            = "response"
 )
 
 var (
-	httpMethods = [...]string{httpGET, httpPOST, httpPUT, httpDELETE, httpPATCH}
+	httpMethods = [...]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch}
 )
 
 // Criteria contains all the information to match a Handler, a request Parser and a Response marshaler
