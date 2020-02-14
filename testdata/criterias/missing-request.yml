@@ -1,0 +1,27 @@
+routes:
+- pkg: packageName0
+  funcName: funcName0
+  varName: varName0
+  httpMethod: get
+  pathIndex: 1
+  handlerIndex: 2
+- funcName: funcName1
+  varName: varName1
+  httpMethod: post
+  pathIndex: 1
+  handlerIndex: 2
+- funcName: funcName2
+  httpMethod: put
+  pathIndex: 1
+  handlerIndex: 2
+- funcName: funcName3
+  httpMethod: patch
+  pathIndex: 0
+  handlerIndex: 2
+- funcName: funcName4
+  httpMethod: delete
+  pathIndex: 0
+  handlerIndex: 1
+- funcName: funcName5
+  pathIndex: 0
+  handlerIndex: 1

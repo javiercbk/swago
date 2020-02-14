@@ -1,0 +1,17 @@
+routes:
+- pkg: packageName0
+  funcName: funcName0
+  varName: varName0
+  httpMethod: get
+  pathIndex: 2
+  handlerIndex: 2
+request:
+- pkg: requestPackageName0
+  funcName: requestFuncName0
+  varName: requestVarName0
+  paramIndex: 0
+response:
+- pkg: responsePackageName0
+  funcName: responseFuncName0
+  varName: responseVarName0
+  paramIndex: 0
