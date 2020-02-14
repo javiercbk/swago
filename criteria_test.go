@@ -15,7 +15,7 @@ var (
 			RouteCriteria{
 				Pkg:          "packageName0",
 				FuncName:     "funcName0",
-				VarName:      "varName0",
+				VarType:      "varType0",
 				HTTPMethod:   "GET",
 				PathIndex:    1,
 				HandlerIndex: 2,
@@ -25,7 +25,7 @@ var (
 			{
 				Pkg:        "requestPackageName0",
 				FuncName:   "requestFuncName0",
-				VarName:    "requestVarName0",
+				VarType:    "requestVarType0",
 				ParamIndex: 0,
 			},
 		},
@@ -33,7 +33,7 @@ var (
 			{
 				Pkg:        "responsePackageName0",
 				FuncName:   "responseFuncName0",
-				VarName:    "responseVarName0",
+				VarType:    "responseVarType0",
 				ParamIndex: 0,
 			},
 		},
@@ -43,7 +43,7 @@ var (
 			RouteCriteria{
 				Pkg:          "packageName0",
 				FuncName:     "funcName0",
-				VarName:      "varName0",
+				VarType:      "varType0",
 				HTTPMethod:   "GET",
 				PathIndex:    1,
 				HandlerIndex: 0,
@@ -53,7 +53,7 @@ var (
 			{
 				Pkg:        "requestPackageName0",
 				FuncName:   "requestFuncName0",
-				VarName:    "requestVarName0",
+				VarType:    "requestVarType0",
 				ParamIndex: 0,
 			},
 		},
@@ -61,7 +61,7 @@ var (
 			{
 				Pkg:        "responsePackageName0",
 				FuncName:   "responseFuncName0",
-				VarName:    "responseVarName0",
+				VarType:    "responseVarType0",
 				ParamIndex: 0,
 			},
 		},
@@ -71,7 +71,7 @@ var (
 			RouteCriteria{
 				Pkg:          "packageName0",
 				FuncName:     "funcName0",
-				VarName:      "varName0",
+				VarType:      "varType0",
 				HTTPMethod:   "GET",
 				PathIndex:    0,
 				HandlerIndex: 2,
@@ -81,7 +81,7 @@ var (
 			{
 				Pkg:        "requestPackageName0",
 				FuncName:   "requestFuncName0",
-				VarName:    "requestVarName0",
+				VarType:    "requestVarType0",
 				ParamIndex: 0,
 			},
 		},
@@ -89,7 +89,7 @@ var (
 			{
 				Pkg:        "responsePackageName0",
 				FuncName:   "responseFuncName0",
-				VarName:    "responseVarName0",
+				VarType:    "responseVarType0",
 				ParamIndex: 0,
 			},
 		},
@@ -99,14 +99,14 @@ var (
 			RouteCriteria{
 				Pkg:          "packageName0",
 				FuncName:     "funcName0",
-				VarName:      "varName0",
+				VarType:      "varType0",
 				HTTPMethod:   "GET",
 				PathIndex:    1,
 				HandlerIndex: 2,
 			},
 			RouteCriteria{
 				FuncName:     "funcName1",
-				VarName:      "varName1",
+				VarType:      "varType1",
 				HTTPMethod:   "POST",
 				PathIndex:    1,
 				HandlerIndex: 2,
@@ -139,12 +139,12 @@ var (
 			{
 				Pkg:        "requestPackageName0",
 				FuncName:   "requestFuncName0",
-				VarName:    "requestVarName0",
+				VarType:    "requestVarType0",
 				ParamIndex: 0,
 			},
 			{
 				FuncName:   "requestFuncName1",
-				VarName:    "requestVarName1",
+				VarType:    "requestVarType1",
 				ParamIndex: 1,
 			},
 			{
@@ -156,12 +156,12 @@ var (
 			{
 				Pkg:        "responsePackageName0",
 				FuncName:   "responseFuncName0",
-				VarName:    "responseVarName0",
+				VarType:    "responseVarType0",
 				ParamIndex: 0,
 			},
 			{
 				FuncName:   "responseFuncName1",
-				VarName:    "responseVarName1",
+				VarType:    "responseVarType1",
 				ParamIndex: 1,
 			},
 			{
@@ -294,8 +294,8 @@ func compareRoute(t *testing.T, route, expected RouteCriteria) {
 	if route.FuncName != expected.FuncName {
 		t.Fatalf("expected FuncName %s but got %s", expected.FuncName, route.FuncName)
 	}
-	if route.VarName != expected.VarName {
-		t.Fatalf("expected VarName %s but got %s", expected.VarName, route.VarName)
+	if route.VarType != expected.VarType {
+		t.Fatalf("expected VarType %s but got %s", expected.VarType, route.VarType)
 	}
 	if route.HTTPMethod != expected.HTTPMethod {
 		t.Fatalf("expected HTTPMethod %s but got %s", expected.HTTPMethod, route.HTTPMethod)
@@ -315,8 +315,8 @@ func compareCallCriteria(t *testing.T, call, expected CallCriteria) {
 	if call.FuncName != expected.FuncName {
 		t.Fatalf("expected FuncName %s but got %s", expected.FuncName, call.FuncName)
 	}
-	if call.VarName != expected.VarName {
-		t.Fatalf("expected VarName %s but got %s", expected.VarName, call.VarName)
+	if call.VarType != expected.VarType {
+		t.Fatalf("expected VarType %s but got %s", expected.VarType, call.VarType)
 	}
 	if call.ParamIndex != expected.ParamIndex {
 		t.Fatalf("expected ParamIndex %d but got %d", expected.ParamIndex, call.ParamIndex)

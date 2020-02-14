@@ -1,12 +1,12 @@
 routes:
 - pkg: packageName0
   funcName: funcName0
-  varName: varName0
+  varType: varType0
   httpMethod: get
   pathIndex: 1
   handlerIndex: 2
 - funcName: funcName1
-  varName: varName1
+  varType: varType1
   httpMethod: post
   pathIndex: 1
   handlerIndex: 2

@@ -1,15 +1,15 @@
 routes:
 - pkg: packageName0
   funcName: funcName0
-  varName: varName0
+  varType: varType0
   httpMethod: get
 request:
 - pkg: requestPackageName0
   funcName: requestFuncName0
-  varName: requestVarName0
+  varType: requestVarType0
   paramIndex: 0
 response:
 - pkg: responsePackageName0
   funcName: responseFuncName0
-  varName: responseVarName0
+  varType: responseVarType0
   paramIndex: 0

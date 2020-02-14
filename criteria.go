@@ -50,7 +50,7 @@ type Criteria struct {
 type RouteCriteria struct {
 	Pkg          string `yaml:"pkg"`
 	FuncName     string `yaml:"funcName"`
-	VarName      string `yaml:"varName"`
+	VarType      string `yaml:"varType"`
 	HTTPMethod   string `yaml:"httpMethod"`
 	PathIndex    int    `yaml:"pathIndex"`
 	HandlerIndex int    `yaml:"handlerIndex"`
@@ -60,7 +60,7 @@ type RouteCriteria struct {
 type CallCriteria struct {
 	Pkg        string `yaml:"pkg"`
 	FuncName   string `yaml:"funcName"`
-	VarName    string `yaml:"varName"`
+	VarType    string `yaml:"varType"`
 	ParamIndex int    `yaml:"paramIndex"`
 }
 
