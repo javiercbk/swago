@@ -43,7 +43,6 @@ func searchForHTTPMethodSwitch(rootNode ast.Node) []switchRouterHandler {
 func extractHTTPMethodsFromSwitch(switchStmt *ast.SwitchStmt) []switchRouterHandler {
 	httpMethodsHandled := make([]switchRouterHandler, 0, 2)
 	for _, c := range switchStmt.Body.List {
-		processed := false
 		caseClause, ok := c.(*ast.CaseClause)
 		if ok {
 			for _, l := range caseClause.List {
@@ -58,8 +57,6 @@ func extractHTTPMethodsFromSwitch(switchStmt *ast.SwitchStmt) []switchRouterHand
 								HTTPMethod: httpMethods[i],
 								RootNode:   caseClause,
 							})
-							processed = true
-							break
 						}
 					}
 				case *ast.Ident:
@@ -72,14 +69,9 @@ func extractHTTPMethodsFromSwitch(switchStmt *ast.SwitchStmt) []switchRouterHand
 								HTTPMethod: httpMethods[i],
 								RootNode:   caseClause,
 							})
-							processed = true
-							break
 						}
 					}
 				}
-			}
-			if processed {
-				break
 			}
 		}
 	}
@@ -94,7 +86,7 @@ func isHTTPMethodSelectorSwitch(selectorExpr *ast.SelectorExpr) bool {
 				name: ident.Name,
 			}
 			findTypeAndPkg(ident, &id)
-			if id.pkg == selHTTP && id.name == selHTTP {
+			if id.pkg == selHTTP && id.name == selRequest {
 				return true
 			}
 		}
