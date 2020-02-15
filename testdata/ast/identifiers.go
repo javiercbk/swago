@@ -12,21 +12,10 @@ var (
 	identifiersPost = http.MethodPost
 )
 
-func readIdentifiers(r *http.Request) {
+func readIdentifiers(r *http.Request) []string {
 	m := r.Method
 	put := http.MethodPut
 	delete := "Delete"
-	switch m {
-	case identifiersGet:
-		// Serve the resource.
-	case identifiersPost:
-		// Create a new record.
-	case put:
-		// Update an existing record.
-	case delete:
-		// Remove the record.
-	case http.MethodPatch:
-		// patch
-	default:
-	}
+	get := identifiersGet
+	return []string{m, put, delete, get}
 }
