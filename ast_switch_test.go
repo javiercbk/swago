@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	switchesFilePath = "./testdata/ast/switches.go"
+	switchesFilePath        = "./testdata/ast/switches.go"
+	switchesNonHTTPFilePath = "./testdata/ast/switches_non_http.go"
 )
 
 func TestSearchForHttpMethodSwitch(t *testing.T) {
@@ -36,9 +37,36 @@ func TestSearchForHttpMethodSwitch(t *testing.T) {
 			strings.ToUpper(http.MethodDelete),
 		},
 	}
-	f, err := os.Open(switchesFilePath)
+	testSearchHTTPMethodSwithForPkg(t, switchesFilePath, "http", expected)
+}
+
+func TestSearchForNonHttpMethodSwitch(t *testing.T) {
+	expected := map[string][]string{
+		"coolIdealSwitch": []string{
+			strings.ToUpper(http.MethodGet),
+			strings.ToUpper(http.MethodPost),
+			strings.ToUpper(http.MethodPut),
+			strings.ToUpper(http.MethodDelete),
+			strings.ToUpper(http.MethodPatch),
+		},
+		"coolNotCompleteSwitch": []string{
+			strings.ToUpper(http.MethodGet),
+			strings.ToUpper(http.MethodPost),
+		},
+		"coolSwitchWithVars": []string{
+			strings.ToUpper(http.MethodGet),
+			strings.ToUpper(http.MethodPost),
+			strings.ToUpper(http.MethodPut),
+			strings.ToUpper(http.MethodDelete),
+		},
+	}
+	testSearchHTTPMethodSwithForPkg(t, switchesNonHTTPFilePath, "cool", expected)
+}
+
+func testSearchHTTPMethodSwithForPkg(t *testing.T, filePath, pkg string, expected map[string][]string) {
+	f, err := os.Open(filePath)
 	if err != nil {
-		t.Fatalf("error opening file %s: %v\n", switchesFilePath, err)
+		t.Fatalf("error opening file %s: %v\n", filePath, err)
 	}
 	defer f.Close()
 	src, err := ioutil.ReadAll(f)
@@ -46,7 +74,7 @@ func TestSearchForHttpMethodSwitch(t *testing.T) {
 		t.Fatalf("error reading file %v\n", err)
 	}
 	fset := token.NewFileSet() // positions are relative to fset
-	parsed, err := parser.ParseFile(fset, switchesFilePath, src, parser.ParseComments)
+	parsed, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
 	if err != nil {
 		t.Fatalf("error parsing ast %v\n", err)
 	}
@@ -60,7 +88,7 @@ func TestSearchForHttpMethodSwitch(t *testing.T) {
 				if !ok {
 					t.Fatalf("func %s was not found in map\n", funcName)
 				}
-				methodsFound := searchForHTTPMethodSwitch(funcDecl.Body)
+				methodsFound := searchForHTTPMethodSwitch(funcDecl.Body, pkg)
 				methodsLen := len(methods)
 				methodsFoundLen := len(methodsFound)
 				if methodsLen != methodsFoundLen {

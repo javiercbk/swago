@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func searchForHTTPMethodSwitch(rootNode ast.Node) []switchRouterHandler {
+func searchForHTTPMethodSwitch(rootNode ast.Node, pkg string) []switchRouterHandler {
 	handlersFound := make([]switchRouterHandler, 0)
 	done := false
 	inspector := func(n ast.Node) bool {
@@ -14,7 +14,7 @@ func searchForHTTPMethodSwitch(rootNode ast.Node) []switchRouterHandler {
 			case *ast.SwitchStmt:
 				selectorExpr, ok := x.Tag.(*ast.SelectorExpr)
 				if ok {
-					if isHTTPMethodSelectorSwitch(selectorExpr) {
+					if isHTTPMethodSelectorSwitch(selectorExpr, pkg) {
 						handlersFound = extractHTTPMethodsFromSwitch(x)
 						done = true
 					}
@@ -25,7 +25,7 @@ func searchForHTTPMethodSwitch(rootNode ast.Node) []switchRouterHandler {
 							name: ident.Name,
 						}
 						findTypeAndPkg(ident, &id)
-						if id.pkg == selHTTP && id.name == selRequest {
+						if id.pkg == pkg && id.name == selRequest {
 							handlersFound = extractHTTPMethodsFromSwitch(x)
 							done = true
 						}
@@ -78,7 +78,7 @@ func extractHTTPMethodsFromSwitch(switchStmt *ast.SwitchStmt) []switchRouterHand
 	return httpMethodsHandled
 }
 
-func isHTTPMethodSelectorSwitch(selectorExpr *ast.SelectorExpr) bool {
+func isHTTPMethodSelectorSwitch(selectorExpr *ast.SelectorExpr, pkg string) bool {
 	if selectorExpr.Sel.Name == selMethod {
 		ident, ok := selectorExpr.X.(*ast.Ident)
 		if ok {
@@ -86,7 +86,7 @@ func isHTTPMethodSelectorSwitch(selectorExpr *ast.SelectorExpr) bool {
 				name: ident.Name,
 			}
 			findTypeAndPkg(ident, &id)
-			if id.pkg == selHTTP && id.name == selRequest {
+			if id.pkg == pkg && id.name == selRequest {
 				return true
 			}
 		}

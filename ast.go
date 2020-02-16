@@ -13,7 +13,6 @@ import (
 const (
 	selMethod  = "Method"
 	selRequest = "Request"
-	selHTTP    = "http"
 )
 
 type inspectorFunc = func(ast.Node) bool
