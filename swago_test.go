@@ -20,7 +20,7 @@ func TestCodeExplorerConfig(t *testing.T) {
 			name:       "module project",
 			path:       "./testdata/mod-project",
 			goPath:     "./testdata/go-path",
-			moduleName: "mod-project",
+			moduleName: "modproj",
 		}, {
 			name:   "gopath project",
 			path:   "./testdata/go-path/go-project",

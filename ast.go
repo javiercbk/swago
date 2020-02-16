@@ -26,9 +26,11 @@ type switchRouterHandler struct {
 }
 
 type identifier struct {
-	ptr  bool
-	name string
-	pkg  string
+	ptr            bool
+	memberOfStruct *ast.StructType
+	memberOf       string
+	name           string
+	pkg            string
 }
 
 // searchFileForRouteCriteria searches a file for routes matching some criterias
@@ -127,6 +129,12 @@ func findTypeAndPkg(ident ast.Node, id *identifier) {
 					}
 				case *ast.AssignStmt:
 					findTypeAndPkg(identX.Rhs[0], id)
+				case *ast.TypeSpec:
+					id.memberOf = identX.Name.Name
+					memberStruct, ok := identX.Type.(*ast.StructType)
+					if ok {
+						id.memberOfStruct = memberStruct
+					}
 				}
 				field, ok := x.Obj.Decl.(*ast.Field)
 				if ok {
@@ -146,6 +154,8 @@ func findTypeAndPkg(ident ast.Node, id *identifier) {
 	case *ast.StarExpr:
 		id.ptr = true
 		findTypeAndPkg(x.X, id)
+	case *ast.CompositeLit:
+		findTypeAndPkg(x.Type, id)
 	}
 }
 

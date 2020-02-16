@@ -3,11 +3,7 @@ package swago
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
-	"io/ioutil"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 )
@@ -64,20 +60,7 @@ func TestSearchForNonHttpMethodSwitch(t *testing.T) {
 }
 
 func testSearchHTTPMethodSwithForPkg(t *testing.T, filePath, pkg string, expected map[string][]string) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		t.Fatalf("error opening file %s: %v\n", filePath, err)
-	}
-	defer f.Close()
-	src, err := ioutil.ReadAll(f)
-	if err != nil {
-		t.Fatalf("error reading file %v\n", err)
-	}
-	fset := token.NewFileSet() // positions are relative to fset
-	parsed, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
-	if err != nil {
-		t.Fatalf("error parsing ast %v\n", err)
-	}
+	parsed := parseASTFromFile(t, filePath)
 	for i := range parsed.Decls {
 		declaration := parsed.Decls[i]
 		funcDecl, ok := declaration.(*ast.FuncDecl)

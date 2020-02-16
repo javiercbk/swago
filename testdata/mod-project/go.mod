@@ -1,3 +1,3 @@
-module mod-project
+module modproj
 
 go 1.13
