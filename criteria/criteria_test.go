@@ -1,4 +1,4 @@
-package swago
+package criteria
 
 import (
 	"fmt"

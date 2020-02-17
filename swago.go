@@ -7,14 +7,15 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/javiercbk/swago/ast"
+	"github.com/javiercbk/swago/criteria"
 )
 
 type modelType string
 
 const (
-	modFile                    = "go.mod"
-	MarshaledModel   modelType = "marshaled"
-	UnmarshaledModel modelType = "unmarshaled"
+	modFile = "go.mod"
 )
 
 func isGoFile(fileName string) bool {
@@ -32,40 +33,18 @@ func listGoFiles(dir string) ([]string, error) {
 	return files, err
 }
 
-// Route is a route handled found
-type Route struct {
-	File          string
-	Line          int
-	Pos           int
-	HTTPMethod    string
-	Path          string
-	HandlerPkg    string
-	HandlerName   string
-	RequestModel  Model
-	ResponseModel Model
-}
-
-// Model is a serializable struct found that can parse incoming requests or serialize outgoing responses
-type Model struct {
-	File           string
-	Line           int
-	Pos            int
-	Pkg            string
-	Type           string
-	MarshaledModel modelType
-}
-
 // CodeExplorer is able to navigate a project's code
 type CodeExplorer struct {
 	moduleName string
 	rootPath   string
 	goPath     string
 	logger     *log.Logger
+	astManager ast.Manager
 }
 
 // FindRoutes attempts to find all the routes in a project folder
-func (e CodeExplorer) FindRoutes(criterias []RouteCriteria) ([]Route, error) {
-	routesFound := make([]Route, 0)
+func (e CodeExplorer) FindRoutes(criterias []criteria.RouteCriteria) ([]ast.Route, error) {
+	routesFound := make([]ast.Route, 0)
 	e.logger.Printf("searching all go files in directory %s recursively\n", e.rootPath)
 	projectGoFiles, err := listGoFiles(e.rootPath)
 	if err != nil {
@@ -74,14 +53,14 @@ func (e CodeExplorer) FindRoutes(criterias []RouteCriteria) ([]Route, error) {
 	for i := range projectGoFiles {
 		goFile := projectGoFiles[i]
 		e.logger.Printf("searching for routes in file %s\n", goFile)
-		routes, err := searchFileForRouteCriteria(goFile, criterias)
-		if err != nil {
-			e.logger.Printf("error searching for route criteria in file %s: %v\n", goFile, err)
-			return routesFound, err
-		}
-		if len(routes) > 0 {
-			routesFound = append(routesFound, routes...)
-		}
+		// routes, err := ast.searchFileForRouteCriteria(goFile, criterias)
+		// if err != nil {
+		// 	e.logger.Printf("error searching for route criteria in file %s: %v\n", goFile, err)
+		// 	return routesFound, err
+		// }
+		// if len(routes) > 0 {
+		// 	routesFound = append(routesFound, routes...)
+		// }
 	}
 	return routesFound, nil
 }

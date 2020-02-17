@@ -1,4 +1,4 @@
-package swago
+package criteria
 
 import (
 	"io"
@@ -32,6 +32,7 @@ const (
 )
 
 var (
+	// httpMethods
 	httpMethods = [...]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch}
 )
 
@@ -163,4 +164,21 @@ func NewCriteriaDecoder(logger *log.Logger) CriteriaDecoder {
 	return CriteriaDecoder{
 		Logger: logger,
 	}
+}
+
+// MatchesHTTPMethod returns true if text contains a known HTTP method
+func MatchesHTTPMethod(text string) bool {
+	return len(MatchHTTPMethod(text)) > 0
+}
+
+// MatchHTTPMethod matches an HTTP given a text
+func MatchHTTPMethod(text string) string {
+	httpMethodName := strings.ToUpper(text)
+	for i := range httpMethods {
+		m := httpMethods[i]
+		if strings.Contains(httpMethodName, m) {
+			return m
+		}
+	}
+	return ""
 }

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/javiercbk/swago"
+	"github.com/javiercbk/swago/criteria"
 )
 
 func main() {
@@ -19,7 +20,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("error creating code explorer %v\n", err)
 	}
-	routeCriterias := make([]swago.RouteCriteria, 0)
+	routeCriterias := make([]criteria.RouteCriteria, 0)
 	_, err = codeExplorer.FindRoutes(routeCriterias)
 	if err != nil {
 		logger.Fatalf("error finding routes %v\n", err)

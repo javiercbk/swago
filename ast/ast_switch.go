@@ -1,8 +1,9 @@
-package swago
+package ast
 
 import (
 	"go/ast"
-	"strings"
+
+	"github.com/javiercbk/swago/criteria"
 )
 
 func searchForHTTPMethodSwitch(rootNode ast.Node, pkg string) []switchRouterHandler {
@@ -21,11 +22,9 @@ func searchForHTTPMethodSwitch(rootNode ast.Node, pkg string) []switchRouterHand
 				} else {
 					ident, ok := x.Tag.(*ast.Ident)
 					if ok {
-						id := identifier{
-							name: ident.Name,
-						}
-						findTypeAndPkg(ident, &id)
-						if id.pkg == pkg && id.name == selRequest {
+						id := Identifier{}
+						identify(ident, &id)
+						if id.Pkg == pkg && id.Name == selRequest {
 							handlersFound = extractHTTPMethodsFromSwitch(x)
 							done = true
 						}
@@ -48,28 +47,24 @@ func extractHTTPMethodsFromSwitch(switchStmt *ast.SwitchStmt) []switchRouterHand
 			for _, l := range caseClause.List {
 				switch x := l.(type) {
 				case *ast.SelectorExpr:
-					id := identifier{}
-					findTypeAndPkg(x, &id)
-					httpMethodName := strings.ToUpper(id.name)
-					for i := range httpMethods {
-						if strings.Contains(httpMethodName, httpMethods[i]) {
-							httpMethodsHandled = append(httpMethodsHandled, switchRouterHandler{
-								HTTPMethod: httpMethods[i],
-								RootNode:   caseClause,
-							})
-						}
+					id := Identifier{}
+					identify(x, &id)
+					matched := criteria.MatchHTTPMethod(id.Name)
+					if len(matched) > 0 {
+						httpMethodsHandled = append(httpMethodsHandled, switchRouterHandler{
+							HTTPMethod: matched,
+							RootNode:   caseClause,
+						})
 					}
 				case *ast.Ident:
-					id := identifier{}
-					findTypeAndPkg(x, &id)
-					httpMethodName := strings.ToUpper(id.name)
-					for i := range httpMethods {
-						if strings.Contains(httpMethodName, httpMethods[i]) {
-							httpMethodsHandled = append(httpMethodsHandled, switchRouterHandler{
-								HTTPMethod: httpMethods[i],
-								RootNode:   caseClause,
-							})
-						}
+					id := Identifier{}
+					identify(x, &id)
+					matched := criteria.MatchHTTPMethod(id.Name)
+					if len(matched) > 0 {
+						httpMethodsHandled = append(httpMethodsHandled, switchRouterHandler{
+							HTTPMethod: matched,
+							RootNode:   caseClause,
+						})
 					}
 				}
 			}
@@ -82,11 +77,9 @@ func isHTTPMethodSelectorSwitch(selectorExpr *ast.SelectorExpr, pkg string) bool
 	if selectorExpr.Sel.Name == selMethod {
 		ident, ok := selectorExpr.X.(*ast.Ident)
 		if ok {
-			id := identifier{
-				name: ident.Name,
-			}
-			findTypeAndPkg(ident, &id)
-			if id.pkg == pkg && id.name == selRequest {
+			id := Identifier{}
+			identify(ident, &id)
+			if id.Pkg == pkg && id.Name == selRequest {
 				return true
 			}
 		}
