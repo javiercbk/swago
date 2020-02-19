@@ -1,3 +1,0 @@
-package golden
-
-func aSimpleFunc() {}

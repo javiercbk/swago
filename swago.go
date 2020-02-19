@@ -33,48 +33,186 @@ func listGoFiles(dir string) ([]string, error) {
 	return files, err
 }
 
-// CodeExplorer is able to navigate a project's code
-type CodeExplorer struct {
+// SwaggerGenerator is able to navigate a project's code
+type SwaggerGenerator struct {
 	moduleName string
 	rootPath   string
 	goPath     string
+	projectGoFiles []string
 	logger     *log.Logger
 	astManager ast.Manager
 }
 
-// FindRoutes attempts to find all the routes in a project folder
-func (e CodeExplorer) FindRoutes(criterias []criteria.RouteCriteria) ([]ast.Route, error) {
+// GenerateSwaggerDoc generates the swagger documentation
+func (e SwaggerGenerator) GenerateSwaggerDoc(goFilePath string, projectCriterias criteria.Criteria) error {
+	if err != nil {
+		e.logger.Printf("error listing all go source files: %v\n", err)
+		return err
+	}
+	routes, err := e.findRoutes(projectGoFiles, projectCriterias.Routes)
+	if err != nil {
+		e.logger.Printf("error finding criterias: %v\n", err)
+		return err
+	}
+	for i := range routes {
+		err = e.resolvePathValue(&routes[i])
+		if err != nil {
+			e.logger.Printf("error resolving path values: %v\n", err)
+			return err
+		}
+		err = e.findHandlerDeclaration(&routes[i])
+		if err != nil {
+			e.logger.Printf("error finding handler declaration: %v\n", err)
+			return err
+		}
+
+	}
+	return nil
+}
+
+func (e SwaggerGenerator) resolvePathValue(r *ast.Route) error {
+	if len(r.Path.Value) == 0 {
+		// Path is a variable, we need to get the actual value
+		if len(r.Path.Pkg) == 0 {
+			foldersToCheck := make([]string, 1, 2)
+			foldersToCheck[0] = e.resolveImportPath(r.Path.Pkg)
+			imports, err := e.astManager.GetFileImports(r.File)
+			if err != nil {
+				e.logger.Printf("error getting file imports for file %s: %v\n", r.File, err)
+				return err
+			}
+			dotImportsFolders, err := e.dotImportsForFile(r.File)
+			if err != nil {
+				e.logger.Printf("error retrieving dot imports folders for file %s: %v\n", r.File, err)
+				return err
+			}
+			if len(dotImportsFolders) > 0 {
+				foldersToCheck = append(foldersToCheck, dotImportsFolders...)
+			}
+			for _, folderToCheck := range foldersToCheck {
+				goFiles, err := listGoFiles(folderToCheck)
+				if err != nil {
+					e.logger.Printf("error listing files in directory %s: %v\n", folderToCheck, err)
+					return err
+				}
+				for _, goFile := range goFiles {
+					err = e.astManager.FindValue(goFile, &r.Path)
+					if err == nil {
+						return nil
+					} else if err != ast.ErrNotFound {
+						e.logger.Printf("error findinding value on file %s: %v\n", goFile, err)
+						return err
+					}
+				}
+			}
+		} else {
+
+		}
+	}
+	return nil
+}
+
+func (e SwaggerGenerator) findHandlerDeclaration(r *ast.Route) error {
+	if len(r.Handler.Pkg) == 0 {
+		dirsToCheck := []string{path.Dir(r.File)}
+		dotImportsFolders, err := e.dotImportsForFile(r.File)
+		if err != nil {
+			e.logger.Printf("error retrieving dot imports folders for file %s: %v\n", r.File, err)
+			return err
+		}
+		for _, d := range dirsToCheck {
+			goFiles, err := listGoFiles(d)
+			if err != nil {
+				e.logger.Printf("error listing go files for directory %s: %v\n", d, err)
+				return err
+			}
+			for _, goFile := range goFiles {
+				e.astManager.FindFuncDeclaration(goFile, r.Handler)
+			}
+		}
+	} else {
+
+	}
+	return routesFound, nil
+}
+
+// findRoutes attempts to find all the routes in a project folder
+func (e SwaggerGenerator) findRoutes(projectGoFiles []string, criterias []criteria.RouteCriteria) ([]ast.Route, error) {
 	routesFound := make([]ast.Route, 0)
 	e.logger.Printf("searching all go files in directory %s recursively\n", e.rootPath)
-	projectGoFiles, err := listGoFiles(e.rootPath)
-	if err != nil {
-		return routesFound, err
-	}
 	for i := range projectGoFiles {
 		goFile := projectGoFiles[i]
 		e.logger.Printf("searching for routes in file %s\n", goFile)
-		// routes, err := ast.searchFileForRouteCriteria(goFile, criterias)
-		// if err != nil {
-		// 	e.logger.Printf("error searching for route criteria in file %s: %v\n", goFile, err)
-		// 	return routesFound, err
-		// }
-		// if len(routes) > 0 {
-		// 	routesFound = append(routesFound, routes...)
-		// }
+		routesForFile, err := e.astManager.ExtractRoutesFromFile(goFile, criterias)
+		if err != nil {
+			e.logger.Printf("error extracting routes from file %s: %v\n", goFile, err)
+			return routesFound, err
+		}
+		routesFound = append(routesFound, routesForFile...)
 	}
 	return routesFound, nil
+}
+
+func (e SwaggerGenerator) findRequestModel( []string, r *ast.Route, callCriterias []criteria.CallCriteria) error{
+	id := Identifier{}
+	for _, c := range callCriterias {
+		err := e.astManager.FindCallCriteria(r.Handler, c, &id)
+		if err != nil {
+			if err != ast.ErrNotFound {
+				e.logger.Printf("error finding call criteria in function: %v\n", err)
+				return err
+			}
+		} else {
+			break;
+		}
+	}
+	if len(id.Name) > 0 {
+		
+	}
+}
+
+func (e SwaggerGenerator) findStructDeclaration()
+
+func (e SwaggerGenerator) dotImportsForFile(filePath string) ([]string, error) {
+	dotImportsDir := make([]string, 0)
+	imports, err := e.astManager.GetFileImports(filePath)
+	if err != nil {
+		e.logger.Printf("error getting file imports for file %s: %v\n", r.File, err)
+		return dotImportsDir, err
+	}
+	for importIndex := range imports {
+		imp := imports[importIndex]
+		if imp.Name == "." {
+			dotImportsDir = append(dotImportsDir, e.resolveImportPath(imp.Pkg))
+			break
+		}
+	}
+	return dotImportsDir, nil
+}
+
+func (e SwaggerGenerator) resolveImportPath(pkgName string) string {
+	if strings.HasPrefix(pkgName, e.moduleName) {
+		return path.Join(e.rootPath, pkgName[len(e.moduleName):])
+	}
+	return path.Join(e.goPath, pkgName)
 }
 
 // func (e CodeExplorer) findRequestModel(r *Route, criterias []RouteCriteria) error {
 // 	return nil
 // }
 
-// NewCodeExplorer creates a code navigator that scans a whole project
-func NewCodeExplorer(rootPath, goPath string, logger *log.Logger) (CodeExplorer, error) {
-	navigator := CodeExplorer{
+// NewSwaggerGenerator creates a swagger generator that scans a whole project
+func NewSwaggerGenerator(rootPath, goPath string, logger *log.Logger) (SwaggerGenerator, error) {
+	var err error
+	generator := SwaggerGenerator{
 		rootPath: rootPath,
 		goPath:   goPath,
 		logger:   logger,
+	}
+	generator.projectGoFiles, err = listGoFiles(e.rootPath)
+	if err != nil {
+		logger.Printf("error getting go file list for folder %s: %v\n", rootPath, err)
+		return err
 	}
 	goModFilePath := path.Join(rootPath, modFile)
 	logger.Printf("looking for module declaration in file %s\n", goModFilePath)
@@ -83,10 +221,10 @@ func NewCodeExplorer(rootPath, goPath string, logger *log.Logger) (CodeExplorer,
 		_, ok := err.(*os.PathError)
 		if !ok {
 			logger.Printf("error opening file %s: %v\n", goModFilePath, err)
-			return navigator, err
+			return generator, err
 		}
 		// if file does not exist then is not a module
-		return navigator, nil
+		return generator, nil
 	}
 	defer goModFile.Close()
 	scanner := bufio.NewScanner(goModFile)
@@ -102,7 +240,8 @@ func NewCodeExplorer(rootPath, goPath string, logger *log.Logger) (CodeExplorer,
 	}
 	if err := scanner.Err(); err != nil {
 		logger.Printf("error reading file %s: %v\n", goModFilePath, err)
+		return err
 	}
-	navigator.moduleName = moduleName
-	return navigator, nil
+	generator.moduleName = moduleName
+	return generator, nil
 }

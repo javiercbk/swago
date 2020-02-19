@@ -6,16 +6,111 @@ import (
 	"go/token"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/javiercbk/swago/criteria"
 )
 
+type notFoundErr string
+
+func (i notFoundErr) Error() string {
+	return string(i)
+}
+
+// FileImport represent the imports of a go file
+type FileImport struct {
+	Name string
+	Pkg  string
+}
+
+// Identifier containts all the information about an identifier
+type Identifier struct {
+	Ptr      bool
+	MemberOf string
+	Name     string
+	Pkg      string
+	Value    string
+}
+
+// FuncDecl is a function declaration
+type FuncDecl struct {
+	Identifier
+	block *ast.BlockStmt
+}
+
+// IsAnalyzable returns true if the FuncDecl is ready to be analyzed
+func (fd FuncDecl) IsAnalyzable() bool {
+	return fd.block != nil
+}
+
+// FuncCall is a function call
+type FuncCall struct {
+	callExpr *ast.CallExpr
+}
+
+// Route is a route handled found
+type Route struct {
+	File          string
+	HTTPMethod    string
+	Path          Identifier
+	Handler       FuncDecl
+	RequestModel  Model
+	ResponseModel Model
+	FuncCall      FuncCall
+}
+
+// Model is a serializable struct found that can parse incoming requests or serialize outgoing responses
+type Model struct {
+	File string
+	Line int
+	Pos  int
+	Pkg  string
+	Type string
+}
+
+// Field is a struct field
+type Field struct {
+	Name     string
+	Type     Identifier
+	IsStruct bool
+	Tag      string
+}
+
+// VarType encodes a variable type
+type VarType struct {
+	GoType string
+	Struct Struct
+}
+
+// Struct is a struct
+type Struct struct {
+	Name   string
+	Fields []Field
+}
+
 const (
-	selMethod  = "Method"
-	selRequest = "Request"
+	// ErrNotFound is returned when a value was not found for an identifier
+	ErrNotFound notFoundErr = "value not found"
+	selMethod               = "Method"
+	selRequest              = "Request"
 )
+
+// Manager is an abstraction that can read ast for files
+type Manager interface {
+	GetFileImports(filePath string) ([]FileImport, error)
+	ExtractRoutesFromFile(filePath string, criterias []criteria.RouteCriteria) ([]Route, error)
+	FindValue(filePath string, id *Identifier) error
+	FindFuncDeclaration(filePath string, id Identifier) (FuncDecl, error)
+	// FindCallsInFunc(funcDecl FuncDecl) []FuncCall
+	FindCallCriteria(funcDecl FuncDecl, callCriteria []criteria.CallCriteria, paramIdentifier *Identifier) error
+	FindStruct(filePath string, s *Struct) error
+}
+
+type naiveManager struct {
+	logger *log.Logger
+}
 
 type inspectorFunc = func(ast.Node) bool
 
@@ -27,12 +122,200 @@ type switchRouterHandler struct {
 	RootNode   ast.Node
 }
 
-type Identifier struct {
-	Ptr      bool
-	MemberOf string
-	Name     string
-	Pkg      string
-	Value    string
+func (m naiveManager) GetFileImports(filePath string) ([]FileImport, error) {
+	var imports []FileImport
+	fset := token.NewFileSet()
+	f := ast.File{}
+	err := m.astForFile(filePath, fset, &f)
+	if err != nil {
+		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
+		return imports, err
+	}
+	imports = make([]FileImport, len(f.Imports))
+	for i := range f.Imports {
+		fileImport := f.Imports[i]
+		fi := FileImport{
+			Pkg: fileImport.Path.Value,
+		}
+		if fileImport.Name != nil {
+			fi.Name = fileImport.Name.Name
+		}
+		imports[i] = fi
+	}
+	return imports, nil
+}
+
+func (m naiveManager) ExtractRoutesFromFile(filePath string, routeCriterias []criteria.RouteCriteria) ([]Route, error) {
+	var routes []Route
+	fset := token.NewFileSet()
+	f := ast.File{}
+	err := m.astForFile(filePath, fset, &f)
+	if err != nil {
+		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
+		return routes, err
+	}
+	searchFileForRouteCriteria(filePath, fset, &f, routeCriterias)
+	return routes, nil
+}
+
+func (m naiveManager) FindValue(filePath string, id *Identifier) error {
+	f := ast.File{}
+	fset := token.NewFileSet()
+	err := m.astForFile(filePath, fset, &f)
+	if err != nil {
+		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
+		return err
+	}
+	for i := range f.Decls {
+		genDecl, ok := f.Decls[i].(*ast.GenDecl)
+		if ok && len(genDecl.Specs) > 0 {
+			valSpecs, ok := genDecl.Specs[0].(*ast.ValueSpec)
+			if ok && len(valSpecs.Names) > 0 && len(valSpecs.Values) > 0 {
+				if valSpecs.Names[0].Name == id.Name {
+					idVal := Identifier{}
+					identify(valSpecs.Values[0], &idVal)
+					if len(idVal.Value) > 0 {
+						id.Value = idVal.Value
+						return nil
+					} else {
+						//TODO: handle scenario where there this a variable
+					}
+				}
+			}
+		}
+	}
+	return ErrNotFound
+}
+
+func (m naiveManager) FindFuncDeclaration(filePath string, targetID Identifier) (FuncDecl, error) {
+	var decl FuncDecl
+	fset := token.NewFileSet()
+	f := ast.File{}
+	err := m.astForFile(filePath, fset, &f)
+	if err != nil {
+		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
+		return decl, err
+	}
+	err = ErrNotFound
+	for _, d := range f.Decls {
+		funcDecl, ok := d.(*ast.FuncDecl)
+		if ok {
+			id := Identifier{}
+			identify(funcDecl.Recv.List[0].Type, &id)
+			if id.Name == targetID.Name && id.MemberOf == targetID.MemberOf {
+				decl.Identifier = id
+				decl.block = funcDecl.Body
+				err = nil
+				break
+			}
+		}
+	}
+	return decl, err
+}
+
+// func (m naiveManager) FindCallsInFunc(funcDecl FuncDecl) []FuncCall {
+// 	calls := make([]FuncCall, 0)
+// 	if funcDecl.block != nil {
+// 		ast.Inspect(funcDecl.block, func(n ast.Node) bool {
+// 			if n != nil {
+// 				callExpr, ok := n.(*ast.CallExpr)
+// 				if ok {
+// 					calls = append(calls, FuncCall{
+// 						callExpr: callExpr,
+// 					})
+// 				}
+// 			}
+// 			return true
+// 		})
+// 	}
+// 	return calls
+// }
+
+func (m naiveManager) FindCallCriteria(funcDecl FuncDecl, callCriteria []criteria.CallCriteria, paramIdentifier *Identifier) error {
+	var paramExpr ast.Expr
+	ast.Inspect(funcDecl.block, func(n ast.Node) bool {
+		callExpr, ok := n.(*ast.CallExpr)
+		if ok {
+			id := Identifier{}
+			identify(callExpr, &id)
+			for _, c := range callCriteria {
+				if id.Name == c.FuncName && (len(c.VarType) > 0 && id.MemberOf == c.VarType) || id.Pkg == c.Pkg {
+					if len(callExpr.Args) > c.ParamIndex {
+						paramExpr = callExpr.Args[c.ParamIndex]
+					}
+				}
+				break
+			}
+		}
+		return paramExpr == nil
+	})
+	if paramExpr != nil {
+		identify(paramExpr, paramIdentifier)
+		if len(paramIdentifier.Name) == 0 {
+			return ErrNotFound
+		}
+	} else {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (m naiveManager) FindStruct(filePath string, s *Struct) error {
+	fset := token.NewFileSet()
+	f := ast.File{}
+	err := m.astForFile(filePath, fset, &f)
+	if err != nil {
+		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
+		return err
+	}
+	err = ErrNotFound
+	found := false
+	ast.Inspect(&f, func(n ast.Node) bool {
+		ts, ok := n.(*ast.TypeSpec)
+		if ok {
+			st, ok := ts.Type.(*ast.StructType)
+			if ok {
+				if ts.Name.Name == s.Name {
+					for _, f := range st.Fields.List {
+						typeIdentifier := Identifier{}
+						typeID, ok := f.Type.(*ast.Ident)
+						if ok {
+							typeIdentifier.Name = typeID.Name
+						} else {
+							typeSelector, ok := f.Type.(*ast.SelectorExpr)
+							if ok {
+								identify(typeSelector, &typeIdentifier)
+							}
+						}
+						newField := Field{
+							Tag:  f.Tag.Value,
+							Name: f.Names[0].Name,
+							Type: typeIdentifier,
+						}
+						s.Fields = append(s.Fields, newField)
+					}
+					found = true
+					return false
+				}
+			}
+		}
+		return !found
+	})
+	return err
+}
+
+func (m naiveManager) astForFile(filePath string, fset *token.FileSet, f *ast.File) error {
+	var err error
+	m.logger.Printf("parsing ast from file %s\n", filePath)
+	f, err = astForFile(filePath, fset)
+	return err
+}
+
+// NewManager creates the default Manager
+func NewManager(logger *log.Logger) Manager {
+	return naiveManager{
+		logger: logger,
+	}
 }
 
 func astForFile(filePath string, fset *token.FileSet) (*ast.File, error) {
@@ -116,11 +399,12 @@ func callExprToRoute(fset *token.FileSet, callExpr *ast.CallExpr, routeCriteria 
 	}
 	pathID := Identifier{}
 	identify(callExpr.Args[routeCriteria.PathIndex], &pathID)
-	// route.Path = pathID
+	route.Path = pathID
 	handleID := Identifier{}
 	identify(callExpr.Args[routeCriteria.HandlerIndex], &handleID)
-	route.HandlerPkg = handleID.Pkg
-	route.HandlerName = handleID.Name
+	route.Handler = FuncDecl{
+		Identifier: handleID,
+	}
 	route.FuncCall = FuncCall{
 		callExpr: callExpr,
 	}

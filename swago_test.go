@@ -39,19 +39,19 @@ func TestCodeExplorerConfig(t *testing.T) {
 			}
 			expectedError := tests[i].expectedError
 			moduleName := tests[i].moduleName
-			codeExplorer, err := NewCodeExplorer(path, goPath, log.New(ioutil.Discard, "", log.LstdFlags))
+			swaggerGenerator, err := NewSwaggerGenerator(path, goPath, log.New(ioutil.Discard, "", log.LstdFlags))
 			if err != expectedError {
 				t.Fatalf("expected error %v but got %v\n", expectedError, err)
 			}
 			if err == nil {
-				if codeExplorer.goPath != goPath {
-					t.Fatalf("expected go path %s but got %s\n", goPath, codeExplorer.goPath)
+				if swaggerGenerator.goPath != goPath {
+					t.Fatalf("expected go path %s but got %s\n", goPath, swaggerGenerator.goPath)
 				}
-				if codeExplorer.rootPath != path {
-					t.Fatalf("expected root path %s but got %s\n", path, codeExplorer.rootPath)
+				if swaggerGenerator.rootPath != path {
+					t.Fatalf("expected root path %s but got %s\n", path, swaggerGenerator.rootPath)
 				}
-				if codeExplorer.moduleName != moduleName {
-					t.Fatalf("expected module name %s but got %s\n", moduleName, codeExplorer.moduleName)
+				if swaggerGenerator.moduleName != moduleName {
+					t.Fatalf("expected module name %s but got %s\n", moduleName, swaggerGenerator.moduleName)
 				}
 			}
 		})
