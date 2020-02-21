@@ -35,21 +35,17 @@ func listGoFiles(dir string) ([]string, error) {
 
 // SwaggerGenerator is able to navigate a project's code
 type SwaggerGenerator struct {
-	moduleName string
-	rootPath   string
-	goPath     string
+	moduleName     string
+	rootPath       string
+	goPath         string
 	projectGoFiles []string
-	logger     *log.Logger
-	astManager ast.Manager
+	logger         *log.Logger
+	astManager     ast.Manager
 }
 
 // GenerateSwaggerDoc generates the swagger documentation
 func (e SwaggerGenerator) GenerateSwaggerDoc(goFilePath string, projectCriterias criteria.Criteria) error {
-	if err != nil {
-		e.logger.Printf("error listing all go source files: %v\n", err)
-		return err
-	}
-	routes, err := e.findRoutes(projectGoFiles, projectCriterias.Routes)
+	routes, err := e.findRoutes(projectCriterias.Routes)
 	if err != nil {
 		e.logger.Printf("error finding criterias: %v\n", err)
 		return err
@@ -80,6 +76,11 @@ func (e SwaggerGenerator) resolvePathValue(r *ast.Route) error {
 			if err != nil {
 				e.logger.Printf("error getting file imports for file %s: %v\n", r.File, err)
 				return err
+			}
+			if len(imports) > 0 {
+				for _, imp := range imports {
+					foldersToCheck = append(foldersToCheck, e.resolveImportPath(imp.Pkg))
+				}
 			}
 			dotImportsFolders, err := e.dotImportsForFile(r.File)
 			if err != nil {
@@ -120,6 +121,9 @@ func (e SwaggerGenerator) findHandlerDeclaration(r *ast.Route) error {
 			e.logger.Printf("error retrieving dot imports folders for file %s: %v\n", r.File, err)
 			return err
 		}
+		for len(dotImportsFolders) > 0 {
+			dirsToCheck = append(dirsToCheck, dotImportsFolders...)
+		}
 		for _, d := range dirsToCheck {
 			goFiles, err := listGoFiles(d)
 			if err != nil {
@@ -127,21 +131,20 @@ func (e SwaggerGenerator) findHandlerDeclaration(r *ast.Route) error {
 				return err
 			}
 			for _, goFile := range goFiles {
-				e.astManager.FindFuncDeclaration(goFile, r.Handler)
+				e.astManager.FindFuncDeclaration(goFile, &r.Handler)
 			}
 		}
 	} else {
 
 	}
-	return routesFound, nil
+	return nil
 }
 
 // findRoutes attempts to find all the routes in a project folder
-func (e SwaggerGenerator) findRoutes(projectGoFiles []string, criterias []criteria.RouteCriteria) ([]ast.Route, error) {
+func (e SwaggerGenerator) findRoutes(criterias []criteria.RouteCriteria) ([]ast.Route, error) {
 	routesFound := make([]ast.Route, 0)
 	e.logger.Printf("searching all go files in directory %s recursively\n", e.rootPath)
-	for i := range projectGoFiles {
-		goFile := projectGoFiles[i]
+	for _, goFile := range e.projectGoFiles {
 		e.logger.Printf("searching for routes in file %s\n", goFile)
 		routesForFile, err := e.astManager.ExtractRoutesFromFile(goFile, criterias)
 		if err != nil {
@@ -153,8 +156,8 @@ func (e SwaggerGenerator) findRoutes(projectGoFiles []string, criterias []criter
 	return routesFound, nil
 }
 
-func (e SwaggerGenerator) findRequestModel( []string, r *ast.Route, callCriterias []criteria.CallCriteria) error{
-	id := Identifier{}
+func (e SwaggerGenerator) findRequestModel(r *ast.Route, callCriterias []criteria.CallCriteria) error {
+	id := ast.Identifier{}
 	for _, c := range callCriterias {
 		err := e.astManager.FindCallCriteria(r.Handler, c, &id)
 		if err != nil {
@@ -163,21 +166,22 @@ func (e SwaggerGenerator) findRequestModel( []string, r *ast.Route, callCriteria
 				return err
 			}
 		} else {
-			break;
+			break
 		}
 	}
 	if len(id.Name) > 0 {
-		
+
 	}
+	return nil
 }
 
-func (e SwaggerGenerator) findStructDeclaration()
+func (e SwaggerGenerator) findStructDeclaration() {}
 
 func (e SwaggerGenerator) dotImportsForFile(filePath string) ([]string, error) {
 	dotImportsDir := make([]string, 0)
 	imports, err := e.astManager.GetFileImports(filePath)
 	if err != nil {
-		e.logger.Printf("error getting file imports for file %s: %v\n", r.File, err)
+		e.logger.Printf("error getting file imports for file %s: %v\n", filePath, err)
 		return dotImportsDir, err
 	}
 	for importIndex := range imports {
@@ -209,10 +213,10 @@ func NewSwaggerGenerator(rootPath, goPath string, logger *log.Logger) (SwaggerGe
 		goPath:   goPath,
 		logger:   logger,
 	}
-	generator.projectGoFiles, err = listGoFiles(e.rootPath)
+	generator.projectGoFiles, err = listGoFiles(rootPath)
 	if err != nil {
 		logger.Printf("error getting go file list for folder %s: %v\n", rootPath, err)
-		return err
+		return generator, err
 	}
 	goModFilePath := path.Join(rootPath, modFile)
 	logger.Printf("looking for module declaration in file %s\n", goModFilePath)
@@ -240,8 +244,9 @@ func NewSwaggerGenerator(rootPath, goPath string, logger *log.Logger) (SwaggerGe
 	}
 	if err := scanner.Err(); err != nil {
 		logger.Printf("error reading file %s: %v\n", goModFilePath, err)
-		return err
+		return generator, err
 	}
 	generator.moduleName = moduleName
+	generator.astManager = ast.NewManager(logger)
 	return generator, nil
 }

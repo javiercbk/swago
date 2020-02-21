@@ -16,22 +16,18 @@ const (
 	callExprIdentifier  = "callExprIdentifier"
 )
 
-func TestDescribeIdentifier(t *testing.T) {
-	expected := map[string]Identifier{
-		"m": Identifier{
-			Ptr:  true,
-			Pkg:  "http",
-			Name: "Request",
+func TestExtractVariable(t *testing.T) {
+	expected := map[string]Variable{
+		"m": Variable{
+			Type: "http.*Request.Method",
+			Name: "m",
 		},
-		"put": Identifier{
-			Ptr:  false,
-			Pkg:  "http",
-			Name: "MethodPut",
+		"put": Variable{
+			Name: "put",
+			Type: "http.MethodPut",
 		},
-		"get": Identifier{
-			Ptr:  false,
-			Pkg:  "http",
-			Name: "MethodGet",
+		"get": Variable{
+			Name: "get",
 		},
 	}
 	parsed := parseASTFromFile(t, switchesFilePath)
@@ -44,20 +40,30 @@ func TestDescribeIdentifier(t *testing.T) {
 		}
 	}
 	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
-		ident, ok := n.(*ast.Ident)
-		if ok {
-			expectedIdentifier, ok := expected[ident.Name]
-			delete(expected, ident.Name)
-			if ok {
-				t.Run(fmt.Sprintf("identifier %s should match", ident.Name), func(t *testing.T) {
-					id := Identifier{}
-					identify(ident, &id)
-					compareIdentifiers(t, id, expectedIdentifier)
-				})
+		if n != nil {
+			v := Variable{}
+			switch x := n.(type) {
+			case *ast.BlockStmt:
+				return true
+			case *ast.SwitchStmt:
+				return true
+			case *ast.Ident:
+				return true
+			case *ast.AssignStmt:
+				extractVariable(x, &v)
+				assertVariable(t, v, expected)
+				return false
+			case *ast.CaseClause:
+				if len(x.List) > 0 {
+					extractVariable(x.List[0], &v)
+					assertVariable(t, v, expected)
+				}
+				return false
+			default:
+				return false
 			}
-			return false
 		}
-		return true
+		return false
 	})
 	t.Run("found all identifiers", func(t *testing.T) {
 		if len(expected) > 0 {
@@ -66,17 +72,27 @@ func TestDescribeIdentifier(t *testing.T) {
 	})
 }
 
+func assertVariable(t *testing.T, v Variable, expected map[string]Variable) {
+	expectedVariable, ok := expected[v.Name]
+	if ok {
+		delete(expected, v.Name)
+		t.Run(fmt.Sprintf("identifier %s should match", v.Name), func(t *testing.T) {
+			compareVariables(t, v, expectedVariable)
+		})
+	}
+}
+
 func TestIdentifyFunc(t *testing.T) {
-	expected := map[string]Identifier{
-		"idFunc": Identifier{
-			Name:     "idFunc",
-			MemberOf: "identifierStruct",
+	expected := map[string]Variable{
+		"idFunc": Variable{
+			Name: "idFunc",
+			Type: "identifierStruct",
 		},
-		"HandleFunc": Identifier{
+		"HandleFunc": Variable{
 			Name: "HandleFunc",
-			Pkg:  "http",
+			Type: "http",
 		},
-		"ToLower": Identifier{
+		"ToLower": Variable{
 			Name: "ToLower",
 		},
 	}
@@ -92,17 +108,14 @@ func TestIdentifyFunc(t *testing.T) {
 	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
 		callExpr, ok := n.(*ast.CallExpr)
 		if ok {
-			id := Identifier{}
-			identify(callExpr.Fun, &id)
-			expectedIdentifier, ok := expected[id.Name]
+			v := Variable{}
+			extractVariable(callExpr.Fun, &v)
+			expectedIdentifier, ok := expected[v.Name]
 			if ok {
-				delete(expected, id.Name)
-				t.Run(fmt.Sprintf("function identifier for func %s", id.Name), func(t *testing.T) {
-					if id.Pkg != expectedIdentifier.Pkg {
-						t.Fatalf("expected pkg %s but got %s", expectedIdentifier.Pkg, id.Pkg)
-					}
-					if id.MemberOf != expectedIdentifier.MemberOf {
-						t.Fatalf("expected memberOf %s but got %s", expectedIdentifier.MemberOf, id.MemberOf)
+				delete(expected, v.Name)
+				t.Run(fmt.Sprintf("function identifier for func %s", v.Name), func(t *testing.T) {
+					if v.Type != expectedIdentifier.Type {
+						t.Fatalf("expected type %s but got %s", expectedIdentifier.Type, v.Type)
 					}
 				})
 			}
@@ -154,24 +167,25 @@ func TestFuncDeclInFile(t *testing.T) {
 }
 
 func TestValueForNode(t *testing.T) {
-	expected := map[string]Identifier{
-		"MethodPut": Identifier{
+	expected := map[string]Variable{
+		"MethodPut": Variable{
 			Name: "MethodPut",
-			Pkg:  "http",
+			Type: "http",
 		},
-		"Delete": Identifier{
+		"Delete": Variable{
+			Name:  "del",
 			Value: "Delete",
 		},
-		"MethodGet": Identifier{
+		"MethodGet": Variable{
 			Name: "MethodGet",
-			Pkg:  "http",
+			Type: "http",
 		},
-		"cool": Identifier{
+		"cool": Variable{
 			Value: "cool",
 		},
-		"MethodPatch": Identifier{
+		"MethodPatch": Variable{
 			Name: "MethodPatch",
-			Pkg:  "http",
+			Type: "http",
 		},
 	}
 	parsed := parseASTFromFile(t, identifiersFilePath)
@@ -182,23 +196,23 @@ func TestValueForNode(t *testing.T) {
 				ast.Inspect(decl, func(n ast.Node) bool {
 					switch x := n.(type) {
 					case *ast.CallExpr:
-						id := Identifier{}
-						identify(x.Args[0], &id)
-						if len(id.Name) > 0 {
-							expectedIdentifier, ok := expected[id.Name]
+						v := Variable{}
+						extractVariable(x.Args[0], &v)
+						if len(v.Name) > 0 {
+							expectedIdentifier, ok := expected[v.Name]
 							if ok {
-								compareIdentifiers(t, id, expectedIdentifier)
-								delete(expected, id.Name)
+								compareVariables(t, v, expectedIdentifier)
+								delete(expected, v.Name)
 							} else {
-								t.Fatalf("identifier not found %s", id.Name)
+								t.Fatalf("identifier not found %s", v.Name)
 							}
 						} else {
-							expectedIdentifier, ok := expected[id.Value]
+							expectedIdentifier, ok := expected[v.Value]
 							if ok {
-								compareIdentifiers(t, id, expectedIdentifier)
-								delete(expected, id.Value)
+								compareVariables(t, v, expectedIdentifier)
+								delete(expected, v.Value)
 							} else {
-								t.Fatalf("identifier not found %s", id.Value)
+								t.Fatalf("identifier not found %s", v.Value)
 							}
 						}
 
@@ -232,17 +246,14 @@ func parseASTFromFile(t *testing.T, filePath string) *ast.File {
 	return parsed
 }
 
-func compareIdentifiers(t *testing.T, id, expectedIdentifier Identifier) {
-	if id.Ptr != expectedIdentifier.Ptr {
-		t.Fatalf("expected ptr %v but got %v", expectedIdentifier.Ptr, id.Ptr)
+func compareVariables(t *testing.T, v, expectedVar Variable) {
+	if v.Name != expectedVar.Name {
+		t.Fatalf("expected name %s but got %s", expectedVar.Name, v.Name)
 	}
-	if id.Name != expectedIdentifier.Name {
-		t.Fatalf("expected name %s but got %s", expectedIdentifier.Name, id.Name)
+	if v.Type != expectedVar.Type {
+		t.Fatalf("expected type %s but got %s", expectedVar.Type, v.Type)
 	}
-	if id.Pkg != expectedIdentifier.Pkg {
-		t.Fatalf("expected pkg %s but got %s", expectedIdentifier.Pkg, id.Pkg)
-	}
-	if id.Value != expectedIdentifier.Value {
-		t.Fatalf("expected value %s but got %s", expectedIdentifier.Value, id.Value)
+	if v.Value != expectedVar.Value {
+		t.Fatalf("expected value %s but got %s", expectedVar.Value, v.Value)
 	}
 }

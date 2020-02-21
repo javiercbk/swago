@@ -61,6 +61,7 @@ func TestSearchForNonHttpMethodSwitch(t *testing.T) {
 
 func testSearchHTTPMethodSwithForPkg(t *testing.T, filePath, pkg string, expected map[string][]string) {
 	parsed := parseASTFromFile(t, filePath)
+	switchVarType := pkg + ".*" + selRequest
 	for i := range parsed.Decls {
 		declaration := parsed.Decls[i]
 		funcDecl, ok := declaration.(*ast.FuncDecl)
@@ -71,7 +72,7 @@ func testSearchHTTPMethodSwithForPkg(t *testing.T, filePath, pkg string, expecte
 				if !ok {
 					t.Fatalf("func %s was not found in map\n", funcName)
 				}
-				methodsFound := searchForHTTPMethodSwitch(funcDecl.Body, pkg)
+				methodsFound := searchForHTTPMethodSwitch(funcDecl.Body, switchVarType)
 				methodsLen := len(methods)
 				methodsFoundLen := len(methodsFound)
 				if methodsLen != methodsFoundLen {

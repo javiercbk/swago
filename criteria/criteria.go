@@ -45,12 +45,13 @@ type Criteria struct {
 
 // RouteCriteria contains all the information to find a Route declaration
 type RouteCriteria struct {
-	Pkg          string `yaml:"pkg"`
-	FuncName     string `yaml:"funcName"`
-	VarType      string `yaml:"varType"`
-	HTTPMethod   string `yaml:"httpMethod"`
-	PathIndex    int    `yaml:"pathIndex"`
-	HandlerIndex int    `yaml:"handlerIndex"`
+	Pkg          string         `yaml:"pkg"`
+	FuncName     string         `yaml:"funcName"`
+	VarType      string         `yaml:"varType"`
+	HTTPMethod   string         `yaml:"httpMethod"`
+	PathIndex    int            `yaml:"pathIndex"`
+	HandlerIndex int            `yaml:"handlerIndex"`
+	ChildRoute   *RouteCriteria `yaml:"childRoute,omitempty"`
 }
 
 // CallCriteria contains all the information to match a function call with an argument
@@ -135,6 +136,9 @@ func (decoder CriteriaDecoder) validateRoute(c *RouteCriteria) error {
 	if c.PathIndex < 0 {
 		decoder.Logger.Printf("route validation error: func %s declared a negative path param index\n", c.FuncName)
 		return ErrInvalidRoute
+	}
+	if c.ChildRoute != nil {
+		return decoder.validateRoute(c.ChildRoute)
 	}
 	if c.HandlerIndex < 0 {
 		decoder.Logger.Printf("route validation error: func %s declared a negative handler param index\n", c.FuncName)

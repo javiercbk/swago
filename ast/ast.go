@@ -1,6 +1,7 @@
 package ast
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -25,23 +26,25 @@ type FileImport struct {
 	Pkg  string
 }
 
-// Identifier containts all the information about an identifier
-type Identifier struct {
-	Ptr      bool
+// Variable has all the information about a variable
+type Variable struct {
+	Name  string
+	Type  string
+	Value string
+}
+
+// Function is a function
+type Function struct {
 	MemberOf string
 	Name     string
 	Pkg      string
-	Value    string
-}
-
-// FuncDecl is a function declaration
-type FuncDecl struct {
-	Identifier
-	block *ast.BlockStmt
+	Args     []Variable
+	Return   []Variable
+	block    *ast.BlockStmt
 }
 
 // IsAnalyzable returns true if the FuncDecl is ready to be analyzed
-func (fd FuncDecl) IsAnalyzable() bool {
+func (fd Function) IsAnalyzable() bool {
 	return fd.block != nil
 }
 
@@ -54,8 +57,8 @@ type FuncCall struct {
 type Route struct {
 	File          string
 	HTTPMethod    string
-	Path          Identifier
-	Handler       FuncDecl
+	Path          Variable
+	Handler       Function
 	RequestModel  Model
 	ResponseModel Model
 	FuncCall      FuncCall
@@ -73,15 +76,9 @@ type Model struct {
 // Field is a struct field
 type Field struct {
 	Name     string
-	Type     Identifier
+	Type     string
 	IsStruct bool
 	Tag      string
-}
-
-// VarType encodes a variable type
-type VarType struct {
-	GoType string
-	Struct Struct
 }
 
 // Struct is a struct
@@ -101,10 +98,10 @@ const (
 type Manager interface {
 	GetFileImports(filePath string) ([]FileImport, error)
 	ExtractRoutesFromFile(filePath string, criterias []criteria.RouteCriteria) ([]Route, error)
-	FindValue(filePath string, id *Identifier) error
-	FindFuncDeclaration(filePath string, id Identifier) (FuncDecl, error)
+	FindValue(filePath string, id *Variable) error
+	FindFuncDeclaration(filePath string, funcDecl *Function) error
 	// FindCallsInFunc(funcDecl FuncDecl) []FuncCall
-	FindCallCriteria(funcDecl FuncDecl, callCriteria []criteria.CallCriteria, paramIdentifier *Identifier) error
+	FindCallCriteria(funcDecl Function, c criteria.CallCriteria, paramIdentifier *Variable) error
 	FindStruct(filePath string, s *Struct) error
 }
 
@@ -125,8 +122,7 @@ type switchRouterHandler struct {
 func (m naiveManager) GetFileImports(filePath string) ([]FileImport, error) {
 	var imports []FileImport
 	fset := token.NewFileSet()
-	f := ast.File{}
-	err := m.astForFile(filePath, fset, &f)
+	f, err := m.astForFile(filePath, fset)
 	if err != nil {
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return imports, err
@@ -148,20 +144,18 @@ func (m naiveManager) GetFileImports(filePath string) ([]FileImport, error) {
 func (m naiveManager) ExtractRoutesFromFile(filePath string, routeCriterias []criteria.RouteCriteria) ([]Route, error) {
 	var routes []Route
 	fset := token.NewFileSet()
-	f := ast.File{}
-	err := m.astForFile(filePath, fset, &f)
+	f, err := m.astForFile(filePath, fset)
 	if err != nil {
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return routes, err
 	}
-	searchFileForRouteCriteria(filePath, fset, &f, routeCriterias)
+	searchFileForRouteCriteria(filePath, fset, f, routeCriterias)
 	return routes, nil
 }
 
-func (m naiveManager) FindValue(filePath string, id *Identifier) error {
-	f := ast.File{}
+func (m naiveManager) FindValue(filePath string, v *Variable) error {
 	fset := token.NewFileSet()
-	err := m.astForFile(filePath, fset, &f)
+	f, err := m.astForFile(filePath, fset)
 	if err != nil {
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return err
@@ -171,11 +165,11 @@ func (m naiveManager) FindValue(filePath string, id *Identifier) error {
 		if ok && len(genDecl.Specs) > 0 {
 			valSpecs, ok := genDecl.Specs[0].(*ast.ValueSpec)
 			if ok && len(valSpecs.Names) > 0 && len(valSpecs.Values) > 0 {
-				if valSpecs.Names[0].Name == id.Name {
-					idVal := Identifier{}
-					identify(valSpecs.Values[0], &idVal)
-					if len(idVal.Value) > 0 {
-						id.Value = idVal.Value
+				if valSpecs.Names[0].Name == v.Name {
+					vVal := Variable{}
+					extractVariable(valSpecs.Values[0], &vVal)
+					if len(vVal.Value) > 0 {
+						v.Value = vVal.Value
 						return nil
 					} else {
 						//TODO: handle scenario where there this a variable
@@ -187,71 +181,48 @@ func (m naiveManager) FindValue(filePath string, id *Identifier) error {
 	return ErrNotFound
 }
 
-func (m naiveManager) FindFuncDeclaration(filePath string, targetID Identifier) (FuncDecl, error) {
-	var decl FuncDecl
+func (m naiveManager) FindFuncDeclaration(filePath string, decl *Function) error {
 	fset := token.NewFileSet()
-	f := ast.File{}
-	err := m.astForFile(filePath, fset, &f)
+	f, err := m.astForFile(filePath, fset)
 	if err != nil {
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
-		return decl, err
+		return err
 	}
 	err = ErrNotFound
 	for _, d := range f.Decls {
 		funcDecl, ok := d.(*ast.FuncDecl)
 		if ok {
-			id := Identifier{}
-			identify(funcDecl.Recv.List[0].Type, &id)
-			if id.Name == targetID.Name && id.MemberOf == targetID.MemberOf {
-				decl.Identifier = id
+			fdecl := Function{}
+			extractFunction(funcDecl.Recv.List[0].Type, &fdecl)
+			if fdecl.Name == decl.Name && fdecl.MemberOf == decl.MemberOf {
+				// TODO: think if it should check the arguments and the return type
 				decl.block = funcDecl.Body
 				err = nil
 				break
 			}
 		}
 	}
-	return decl, err
+	return err
 }
 
-// func (m naiveManager) FindCallsInFunc(funcDecl FuncDecl) []FuncCall {
-// 	calls := make([]FuncCall, 0)
-// 	if funcDecl.block != nil {
-// 		ast.Inspect(funcDecl.block, func(n ast.Node) bool {
-// 			if n != nil {
-// 				callExpr, ok := n.(*ast.CallExpr)
-// 				if ok {
-// 					calls = append(calls, FuncCall{
-// 						callExpr: callExpr,
-// 					})
-// 				}
-// 			}
-// 			return true
-// 		})
-// 	}
-// 	return calls
-// }
-
-func (m naiveManager) FindCallCriteria(funcDecl FuncDecl, callCriteria []criteria.CallCriteria, paramIdentifier *Identifier) error {
+func (m naiveManager) FindCallCriteria(funcDecl Function, c criteria.CallCriteria, paramVar *Variable) error {
 	var paramExpr ast.Expr
 	ast.Inspect(funcDecl.block, func(n ast.Node) bool {
 		callExpr, ok := n.(*ast.CallExpr)
 		if ok {
-			id := Identifier{}
-			identify(callExpr, &id)
-			for _, c := range callCriteria {
-				if id.Name == c.FuncName && (len(c.VarType) > 0 && id.MemberOf == c.VarType) || id.Pkg == c.Pkg {
-					if len(callExpr.Args) > c.ParamIndex {
-						paramExpr = callExpr.Args[c.ParamIndex]
-					}
+			fDecl := Function{}
+			extractFunction(callExpr, &fDecl)
+			if fDecl.Name == c.FuncName && (len(c.VarType) > 0 && fDecl.MemberOf == c.VarType) || fDecl.Pkg == c.Pkg {
+				if len(callExpr.Args) > c.ParamIndex {
+					paramExpr = callExpr.Args[c.ParamIndex]
 				}
-				break
 			}
 		}
 		return paramExpr == nil
 	})
 	if paramExpr != nil {
-		identify(paramExpr, paramIdentifier)
-		if len(paramIdentifier.Name) == 0 {
+		extractVariable(paramExpr, paramVar)
+		if len(paramVar.Name) == 0 {
 			return ErrNotFound
 		}
 	} else {
@@ -262,35 +233,26 @@ func (m naiveManager) FindCallCriteria(funcDecl FuncDecl, callCriteria []criteri
 
 func (m naiveManager) FindStruct(filePath string, s *Struct) error {
 	fset := token.NewFileSet()
-	f := ast.File{}
-	err := m.astForFile(filePath, fset, &f)
+	f, err := m.astForFile(filePath, fset)
 	if err != nil {
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return err
 	}
 	err = ErrNotFound
 	found := false
-	ast.Inspect(&f, func(n ast.Node) bool {
+	ast.Inspect(f, func(n ast.Node) bool {
 		ts, ok := n.(*ast.TypeSpec)
 		if ok {
 			st, ok := ts.Type.(*ast.StructType)
 			if ok {
 				if ts.Name.Name == s.Name {
 					for _, f := range st.Fields.List {
-						typeIdentifier := Identifier{}
-						typeID, ok := f.Type.(*ast.Ident)
-						if ok {
-							typeIdentifier.Name = typeID.Name
-						} else {
-							typeSelector, ok := f.Type.(*ast.SelectorExpr)
-							if ok {
-								identify(typeSelector, &typeIdentifier)
-							}
-						}
+						buf := bytes.Buffer{}
+						extractType(f.Type, &buf)
 						newField := Field{
 							Tag:  f.Tag.Value,
 							Name: f.Names[0].Name,
-							Type: typeIdentifier,
+							Type: correctType(buf.String()),
 						}
 						s.Fields = append(s.Fields, newField)
 					}
@@ -304,11 +266,9 @@ func (m naiveManager) FindStruct(filePath string, s *Struct) error {
 	return err
 }
 
-func (m naiveManager) astForFile(filePath string, fset *token.FileSet, f *ast.File) error {
-	var err error
+func (m naiveManager) astForFile(filePath string, fset *token.FileSet) (*ast.File, error) {
 	m.logger.Printf("parsing ast from file %s\n", filePath)
-	f, err = astForFile(filePath, fset)
-	return err
+	return astForFile(filePath, fset)
 }
 
 // NewManager creates the default Manager
@@ -335,44 +295,35 @@ func astForReader(filePath string, r io.Reader, fset *token.FileSet) (*ast.File,
 	return parser.ParseFile(fset, filePath, src, parser.ParseComments)
 }
 
-// analyzeFile scans a file for patterns
-func analyzeFile(fset *token.FileSet, file *ast.File, inspectorBuilder inspectorBuilderFunc) {
-	inspector := inspectorBuilder(fset)
-	ast.Inspect(file, inspector)
-}
-
 // searchFileForRouteCriteria searches a file for routes matching some criterias
 func searchFileForRouteCriteria(filePath string, fset *token.FileSet, file *ast.File, criterias []criteria.RouteCriteria) []Route {
 	routesFound := make([]Route, 0)
-	inspectorBuilder := func(fset *token.FileSet) inspectorFunc {
-		return func(n ast.Node) bool {
-			if n != nil {
-				switch x := n.(type) {
-				case *ast.CallExpr:
-					for i := range criterias {
-						routeCriteria := criterias[i]
-						if matchesRouteCriteria(x, routeCriteria) {
-							foundRoute := Route{
-								File: filePath,
-							}
-							callExprToRoute(fset, x, routeCriteria, &foundRoute)
-							routesFound = append(routesFound, foundRoute)
-							// if CallExpr matched one criteria, we don't want to compare it to other criterias
-							break
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n != nil {
+			switch x := n.(type) {
+			case *ast.CallExpr:
+				for i := range criterias {
+					routeCriteria := criterias[i]
+					if matchesRouteCriteria(x, routeCriteria) {
+						foundRoute := Route{
+							File: filePath,
 						}
+						callExprToRoute(fset, x, routeCriteria, &foundRoute)
+						routesFound = append(routesFound, foundRoute)
+						// if CallExpr matched one criteria, we don't want to compare it to other criterias
+						break
 					}
 				}
 			}
-			return true
 		}
-	}
-	analyzeFile(fset, file, inspectorBuilder)
+		return true
+	})
 	return routesFound
 }
 
 func matchesRouteCriteria(callExpr *ast.CallExpr, routeCriteria criteria.RouteCriteria) bool {
-	id := Identifier{}
-	identify(callExpr, &id)
+	id := Function{}
+	extractFunction(callExpr, &id)
 	matches := id.Name == routeCriteria.FuncName && id.Pkg == routeCriteria.Pkg && id.MemberOf == routeCriteria.VarType
 	if matches {
 		if len(routeCriteria.HTTPMethod) == 0 && !criteria.MatchesHTTPMethod(id.Name) {
@@ -390,91 +341,117 @@ func matchesRouteCriteria(callExpr *ast.CallExpr, routeCriteria criteria.RouteCr
 }
 
 func callExprToRoute(fset *token.FileSet, callExpr *ast.CallExpr, routeCriteria criteria.RouteCriteria, route *Route) {
-	id := Identifier{}
-	identify(callExpr, &id)
+	fdecl := Function{}
+	extractFunction(callExpr, &fdecl)
 	if len(routeCriteria.HTTPMethod) > 0 {
 		route.HTTPMethod = routeCriteria.HTTPMethod
 	} else {
-		route.HTTPMethod = criteria.MatchHTTPMethod(id.Name)
+		route.HTTPMethod = criteria.MatchHTTPMethod(fdecl.Name)
 	}
-	pathID := Identifier{}
-	identify(callExpr.Args[routeCriteria.PathIndex], &pathID)
-	route.Path = pathID
-	handleID := Identifier{}
-	identify(callExpr.Args[routeCriteria.HandlerIndex], &handleID)
-	route.Handler = FuncDecl{
-		Identifier: handleID,
-	}
+	extractVariable(callExpr.Args[routeCriteria.PathIndex], &route.Path)
+	extractFunction(callExpr.Args[routeCriteria.HandlerIndex], &route.Handler)
 	route.FuncCall = FuncCall{
 		callExpr: callExpr,
 	}
 }
 
-func identify(ident ast.Node, id *Identifier) {
-	switch x := ident.(type) {
+func extractType(n ast.Node, buf *bytes.Buffer) {
+	switch x := n.(type) {
+	case *ast.StarExpr:
+		extractType(x.X, buf)
+		buf.WriteString("*")
+	case *ast.SelectorExpr:
+		extractType(x.X, buf)
+		buf.WriteString(".")
+		buf.WriteString(x.Sel.Name)
+	case *ast.Field:
+		extractType(x.Type, buf)
 	case *ast.Ident:
+		if buf.Len() > 0 {
+			buf.WriteString(".")
+		}
 		if x.Obj != nil {
-			if x.Obj.Decl != nil {
-				switch identX := x.Obj.Decl.(type) {
-				case *ast.Field:
-					identify(identX, id)
-				case *ast.ValueSpec:
-					if len(identX.Values) > 0 {
-						// for the moment I only care about the first one
-						identify(identX.Values[0], id)
-					}
-				case *ast.AssignStmt:
-					identify(identX.Rhs[0], id)
-				case *ast.TypeSpec:
-					id.MemberOf = identX.Name.Name
-				}
-				field, ok := x.Obj.Decl.(*ast.Field)
-				if ok {
-					identify(field, id)
-				}
+			f, ok := x.Obj.Decl.(*ast.Field)
+			if ok {
+				extractType(f, buf)
 			}
 		} else {
-			if len(id.Name) == 0 {
-				id.Name = x.Name
-			} else {
-				id.Pkg = x.Name
+			buf.WriteString(x.Name)
+		}
+	}
+}
+
+func correctType(toCorrect string) string {
+	corrected := toCorrect
+	if strings.Contains(toCorrect, "*") {
+		parts := strings.Split(toCorrect, ".")
+		for i := range parts {
+			str := parts[i]
+			if strings.HasSuffix(str, "*") {
+				parts[i] = "*" + str[:len(str)-1]
 			}
 		}
+		corrected = strings.Join(parts, ".")
+	}
+	return corrected
+}
+
+func extractVariable(n ast.Node, v *Variable) {
+	switch x := n.(type) {
 	case *ast.Field:
-		identify(x.Type, id)
-	case *ast.SelectorExpr:
-		if x.Sel.Obj == nil {
-			id.Name = x.Sel.Name
-			identify(x.X, id)
+		v.Name = x.Names[0].Name
+		buf := bytes.Buffer{}
+		extractType(x.Type, &buf)
+		v.Type = correctType(buf.String())
+	case *ast.AssignStmt:
+		ident, ok := x.Lhs[0].(*ast.Ident)
+		if ok {
+			v.Name = ident.Name
+			buf := bytes.Buffer{}
+			extractType(x.Rhs[0], &buf)
+			v.Type = correctType(buf.String())
 		}
-	case *ast.StarExpr:
-		id.Ptr = true
-		identify(x.X, id)
+	case *ast.Ident:
+		v.Name = x.Name
+	case *ast.SelectorExpr:
+		v.Name = x.Sel.Name
+		buf := bytes.Buffer{}
+		extractType(x.X, &buf)
+		v.Type = correctType(buf.String())
 	case *ast.CompositeLit:
-		identify(x.Type, id)
+		extractVariable(x.Type, v)
+	case *ast.BasicLit:
+		val := x.Value
+		if x.Kind == token.STRING {
+			v.Type = "string"
+			val = strings.Trim(val, "\"")
+		} else {
+			v.Type = "number"
+		}
+		v.Value = val
+	}
+}
+
+func extractFunction(n ast.Node, funcDecl *Function) {
+	switch x := n.(type) {
 	case *ast.FuncDecl:
-		id.Name = x.Name.Name
+		funcDecl.Name = x.Name.Name
 		if x.Recv != nil && x.Recv.List != nil {
 			if len(x.Recv.List) > 0 {
 				field := x.Recv.List[0]
 				switch ft := field.Type.(type) {
 				case *ast.Ident:
-					id.MemberOf = ft.Name
+					funcDecl.MemberOf = ft.Name
 				case *ast.StarExpr:
 					ident, ok := ft.X.(*ast.Ident)
 					if ok {
-						id.MemberOf = "*" + ident.Name
+						funcDecl.MemberOf = "*" + ident.Name
 					}
 				}
 			}
 		}
-	case *ast.BasicLit:
-		val := x.Value
-		if x.Kind == token.STRING {
-			val = strings.Trim(val, "\"")
-		}
-		id.Value = val
-
+	case *ast.CallExpr:
+		extractFunction(x.Fun, funcDecl)
 	}
 }
 
@@ -482,9 +459,9 @@ func findFuncDeclInFile(f *ast.File, name, memberOf string, funcDecl *ast.FuncDe
 	for i := range f.Decls {
 		decl, ok := f.Decls[i].(*ast.FuncDecl)
 		if ok {
-			id := Identifier{}
-			identify(decl, &id)
-			if id.Name == name && id.MemberOf == memberOf {
+			f := Function{}
+			extractFunction(decl, &f)
+			if f.Name == name && f.MemberOf == memberOf {
 				funcDecl = decl
 				return true
 			}
