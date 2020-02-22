@@ -28,28 +28,28 @@ type FileImport struct {
 
 // Variable has all the information about a variable
 type Variable struct {
-	Name  string
-	Type  string
-	Value string
+	Name       string
+	Hierarchy  string
+	GoType     string
+	Value      string
+	Definition *Variable
 }
 
 // Function is a function
 type Function struct {
-	MemberOf string
-	Name     string
-	Pkg      string
-	Args     []Variable
-	Return   []Variable
-	block    *ast.BlockStmt
-}
-
-// IsAnalyzable returns true if the FuncDecl is ready to be analyzed
-func (fd Function) IsAnalyzable() bool {
-	return fd.block != nil
+	Hierarchy string
+	Name      string
+	Args      []Variable
+	Return    []Variable
+	block     *ast.BlockStmt
+	callExpr  *ast.CallExpr
 }
 
 // FuncCall is a function call
 type FuncCall struct {
+	Function Function
+	Args     []Variable
+	Return   []Variable
 	callExpr *ast.CallExpr
 }
 
@@ -89,9 +89,28 @@ type Struct struct {
 
 const (
 	// ErrNotFound is returned when a value was not found for an identifier
-	ErrNotFound notFoundErr = "value not found"
-	selMethod               = "Method"
-	selRequest              = "Request"
+	ErrNotFound      notFoundErr = "value not found"
+	selMethod                    = "Method"
+	selRequest                   = "Request"
+	goTypeBool                   = "bool"
+	goTypeString                 = "string"
+	goTypeInt                    = "int"
+	goTypeInt8                   = "int8"
+	goTypeInt16                  = "int16"
+	goTypeInt32                  = "int32"
+	goTypeInt64                  = "int64"
+	goTypeUint                   = "uint"
+	goTypeUint8                  = "uint8"
+	goTypeUint16                 = "uint16"
+	goTypeUint32                 = "uint32"
+	goTypeUint64                 = "uint64"
+	goTypeUintptr                = "uintptr"
+	goTypeByte                   = "byte"
+	goTypeRune                   = "rune"
+	goTypeFloat32                = "float32"
+	goTypeFloat64                = "float64"
+	goTypeComplex64              = "complex64"
+	goTypeComplex128             = "complex128"
 )
 
 // Manager is an abstraction that can read ast for files
@@ -194,7 +213,7 @@ func (m naiveManager) FindFuncDeclaration(filePath string, decl *Function) error
 		if ok {
 			fdecl := Function{}
 			extractFunction(funcDecl.Recv.List[0].Type, &fdecl)
-			if fdecl.Name == decl.Name && fdecl.MemberOf == decl.MemberOf {
+			if fdecl.Name == decl.Name && fdecl.Hierarchy == decl.Hierarchy {
 				// TODO: think if it should check the arguments and the return type
 				decl.block = funcDecl.Body
 				err = nil
@@ -212,7 +231,7 @@ func (m naiveManager) FindCallCriteria(funcDecl Function, c criteria.CallCriteri
 		if ok {
 			fDecl := Function{}
 			extractFunction(callExpr, &fDecl)
-			if fDecl.Name == c.FuncName && (len(c.VarType) > 0 && fDecl.MemberOf == c.VarType) || fDecl.Pkg == c.Pkg {
+			if fDecl.Name == c.FuncName && fDecl.Hierarchy == c.Hierarchy {
 				if len(callExpr.Args) > c.ParamIndex {
 					paramExpr = callExpr.Args[c.ParamIndex]
 				}
@@ -248,11 +267,11 @@ func (m naiveManager) FindStruct(filePath string, s *Struct) error {
 				if ts.Name.Name == s.Name {
 					for _, f := range st.Fields.List {
 						buf := bytes.Buffer{}
-						extractType(f.Type, &buf)
+						extractHierarchy(f.Type, &buf)
 						newField := Field{
 							Tag:  f.Tag.Value,
 							Name: f.Names[0].Name,
-							Type: correctType(buf.String()),
+							Type: correctHierarchy(buf.String()),
 						}
 						s.Fields = append(s.Fields, newField)
 					}
@@ -324,7 +343,7 @@ func searchFileForRouteCriteria(filePath string, fset *token.FileSet, file *ast.
 func matchesRouteCriteria(callExpr *ast.CallExpr, routeCriteria criteria.RouteCriteria) bool {
 	id := Function{}
 	extractFunction(callExpr, &id)
-	matches := id.Name == routeCriteria.FuncName && id.Pkg == routeCriteria.Pkg && id.MemberOf == routeCriteria.VarType
+	matches := id.Name == routeCriteria.FuncName && id.Hierarchy == routeCriteria.Hierarchy
 	if matches {
 		if len(routeCriteria.HTTPMethod) == 0 && !criteria.MatchesHTTPMethod(id.Name) {
 			return false
@@ -355,33 +374,39 @@ func callExprToRoute(fset *token.FileSet, callExpr *ast.CallExpr, routeCriteria 
 	}
 }
 
-func extractType(n ast.Node, buf *bytes.Buffer) {
+func extractHierarchy(n ast.Node, buf *bytes.Buffer) {
 	switch x := n.(type) {
 	case *ast.StarExpr:
-		extractType(x.X, buf)
+		extractHierarchy(x.X, buf)
 		buf.WriteString("*")
 	case *ast.SelectorExpr:
-		extractType(x.X, buf)
+		extractHierarchy(x.X, buf)
 		buf.WriteString(".")
 		buf.WriteString(x.Sel.Name)
 	case *ast.Field:
-		extractType(x.Type, buf)
+		extractHierarchy(x.Type, buf)
 	case *ast.Ident:
 		if buf.Len() > 0 {
 			buf.WriteString(".")
 		}
 		if x.Obj != nil {
-			f, ok := x.Obj.Decl.(*ast.Field)
-			if ok {
-				extractType(f, buf)
+			switch f := x.Obj.Decl.(type) {
+			case *ast.Field:
+				extractHierarchy(f, buf)
+			case *ast.AssignStmt:
+				extractHierarchy(f.Rhs[0], buf)
+			case *ast.TypeSpec:
+				buf.WriteString(f.Name.Name)
 			}
 		} else {
 			buf.WriteString(x.Name)
 		}
+	case *ast.CompositeLit:
+		extractHierarchy(x.Type, buf)
 	}
 }
 
-func correctType(toCorrect string) string {
+func correctHierarchy(toCorrect string) string {
 	corrected := toCorrect
 	if strings.Contains(toCorrect, "*") {
 		parts := strings.Split(toCorrect, ".")
@@ -400,35 +425,136 @@ func extractVariable(n ast.Node, v *Variable) {
 	switch x := n.(type) {
 	case *ast.Field:
 		v.Name = x.Names[0].Name
-		buf := bytes.Buffer{}
-		extractType(x.Type, &buf)
-		v.Type = correctType(buf.String())
+		ident, ok := x.Type.(*ast.Ident)
+		if ok {
+			if isGoType(ident.Name) {
+				v.GoType = ident.Name
+			} else {
+				v.Hierarchy = ident.Name
+			}
+		} else {
+			buf := bytes.Buffer{}
+			extractHierarchy(x.Type, &buf)
+			v.Hierarchy = correctHierarchy(buf.String())
+		}
 	case *ast.AssignStmt:
 		ident, ok := x.Lhs[0].(*ast.Ident)
 		if ok {
 			v.Name = ident.Name
 			buf := bytes.Buffer{}
-			extractType(x.Rhs[0], &buf)
-			v.Type = correctType(buf.String())
+			extractHierarchy(x.Rhs[0], &buf)
+			v.Hierarchy = correctHierarchy(buf.String())
 		}
 	case *ast.Ident:
-		v.Name = x.Name
+		if isGoType(x.Name) {
+			v.GoType = x.Name
+		} else {
+			v.Name = x.Name
+		}
+		if x.Obj != nil {
+			v.Definition = &Variable{}
+			switch o := x.Obj.Decl.(type) {
+			case *ast.AssignStmt:
+				extractVariable(o.Rhs[0], v.Definition)
+			case *ast.ValueSpec:
+				extractVariable(o.Values[0], v.Definition)
+			}
+		}
 	case *ast.SelectorExpr:
 		v.Name = x.Sel.Name
 		buf := bytes.Buffer{}
-		extractType(x.X, &buf)
-		v.Type = correctType(buf.String())
+		extractHierarchy(x.X, &buf)
+		v.Hierarchy = correctHierarchy(buf.String())
 	case *ast.CompositeLit:
 		extractVariable(x.Type, v)
 	case *ast.BasicLit:
 		val := x.Value
 		if x.Kind == token.STRING {
-			v.Type = "string"
+			v.GoType = "string"
 			val = strings.Trim(val, "\"")
 		} else {
-			v.Type = "number"
+			v.GoType = "number"
 		}
 		v.Value = val
+	}
+}
+
+func extractOriginalDefinition(v Variable) Variable {
+	if v.Definition != nil {
+		return extractOriginalDefinition(*v.Definition)
+	}
+	return v
+}
+
+func isGoType(t string) bool {
+	switch t {
+	case goTypeBool:
+		return true
+	case goTypeString:
+		return true
+	case goTypeInt:
+		return true
+	case goTypeInt8:
+		return true
+	case goTypeInt16:
+		return true
+	case goTypeInt32:
+		return true
+	case goTypeInt64:
+		return true
+	case goTypeUint:
+		return true
+	case goTypeUint8:
+		return true
+	case goTypeUint16:
+		return true
+	case goTypeUint32:
+		return true
+	case goTypeUint64:
+		return true
+	case goTypeUintptr:
+		return true
+	case goTypeByte:
+		return true
+	case goTypeRune:
+		return true
+	case goTypeFloat32:
+		return true
+	case goTypeFloat64:
+		return true
+	case goTypeComplex64:
+		return true
+	case goTypeComplex128:
+		return true
+	default:
+		return false
+	}
+}
+
+func extractFuncCall(n ast.Node, funcCall *FuncCall) {
+	switch x := n.(type) {
+	case *ast.AssignStmt:
+		extractFunction(x.Rhs[0], &funcCall.Function)
+		if funcCall.callExpr != nil {
+			for _, l := range x.Lhs {
+				v := Variable{}
+				extractVariable(l, &v)
+				funcCall.Return = append(funcCall.Return, v)
+			}
+			extractFuncCallArg(funcCall.callExpr, funcCall)
+		}
+	case *ast.CallExpr:
+		extractFunction(x, &funcCall.Function)
+		extractFuncCallArg(x, funcCall)
+		funcCall.callExpr = x
+	}
+}
+
+func extractFuncCallArg(call *ast.CallExpr, funcCall *FuncCall) {
+	for _, a := range call.Args {
+		v := Variable{}
+		extractVariable(a, &v)
+		funcCall.Args = append(funcCall.Args, v)
 	}
 }
 
@@ -438,30 +564,58 @@ func extractFunction(n ast.Node, funcDecl *Function) {
 		funcDecl.Name = x.Name.Name
 		if x.Recv != nil && x.Recv.List != nil {
 			if len(x.Recv.List) > 0 {
-				field := x.Recv.List[0]
-				switch ft := field.Type.(type) {
+				switch ft := x.Recv.List[0].Type.(type) {
 				case *ast.Ident:
-					funcDecl.MemberOf = ft.Name
+					buf := bytes.Buffer{}
+					extractHierarchy(ft, &buf)
+					funcDecl.Hierarchy = correctHierarchy(buf.String())
 				case *ast.StarExpr:
-					ident, ok := ft.X.(*ast.Ident)
-					if ok {
-						funcDecl.MemberOf = "*" + ident.Name
-					}
+					buf := bytes.Buffer{}
+					extractHierarchy(ft, &buf)
+					funcDecl.Hierarchy = correctHierarchy(buf.String())
 				}
 			}
 		}
+		if x.Type.Params != nil && len(x.Type.Params.List) > 0 {
+			for _, p := range x.Type.Params.List {
+				v := Variable{}
+				extractVariable(p, &v)
+				funcDecl.Args = append(funcDecl.Args, v)
+			}
+		}
+		if x.Type.Results != nil && len(x.Type.Results.List) > 0 {
+			for _, r := range x.Type.Results.List {
+				v := Variable{}
+				extractVariable(r.Type, &v)
+				funcDecl.Return = append(funcDecl.Return, v)
+			}
+		}
+	case *ast.SelectorExpr:
+		funcDecl.Name = x.Sel.Name
+		buf := bytes.Buffer{}
+		extractHierarchy(x.X, &buf)
+		funcDecl.Hierarchy = correctHierarchy(buf.String())
+	case *ast.Ident:
+		funcDecl.Name = x.Name
+		if x.Obj != nil {
+			fd, ok := x.Obj.Decl.(*ast.FuncDecl)
+			if ok {
+				extractFunction(fd, funcDecl)
+			}
+		}
 	case *ast.CallExpr:
+		funcDecl.callExpr = x
 		extractFunction(x.Fun, funcDecl)
 	}
 }
 
-func findFuncDeclInFile(f *ast.File, name, memberOf string, funcDecl *ast.FuncDecl) bool {
+func findFuncDeclInFile(f *ast.File, name, hierarchy string, funcDecl *ast.FuncDecl) bool {
 	for i := range f.Decls {
 		decl, ok := f.Decls[i].(*ast.FuncDecl)
 		if ok {
 			f := Function{}
 			extractFunction(decl, &f)
-			if f.Name == name && f.MemberOf == memberOf {
+			if f.Name == name && f.Hierarchy == hierarchy {
 				funcDecl = decl
 				return true
 			}

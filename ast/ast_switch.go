@@ -24,7 +24,7 @@ func searchForHTTPMethodSwitch(rootNode ast.Node, switchVarType string) []switch
 					if ok {
 						v := Variable{}
 						extractVariable(ident, &v)
-						if v.Type == switchVarType {
+						if v.Hierarchy == switchVarType {
 							handlersFound = extractHTTPMethodsFromSwitch(x)
 							done = true
 						}
@@ -79,7 +79,7 @@ func isHTTPMethodSelectorSwitch(selectorExpr *ast.SelectorExpr, switchVarType st
 		if ok {
 			v := Variable{}
 			extractVariable(ident, &v)
-			if v.Type == switchVarType {
+			if v.Hierarchy == switchVarType {
 				return true
 			}
 		}

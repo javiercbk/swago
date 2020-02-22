@@ -9,26 +9,26 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// CriteriaParserErr is returned when there is an error parsing a criteria
-type CriteriaParserErr string
+// ParserErr is returned when there is an error parsing a criteria
+type ParserErr string
 
-func (p CriteriaParserErr) Error() string {
+func (p ParserErr) Error() string {
 	return string(p)
 }
 
 const (
 	// ErrMissingRoutes is returned when a Criteria does not have any route criteria
-	ErrMissingRoutes CriteriaParserErr = "missing routes matching criteria array"
+	ErrMissingRoutes ParserErr = "missing routes matching criteria array"
 	// ErrMissingRequest is returned when a Criteria does not have any request criteria
-	ErrMissingRequest CriteriaParserErr = "missing request matching criteria array"
+	ErrMissingRequest ParserErr = "missing request matching criteria array"
 	// ErrMissingResponse is returned when a Criteria does not have any response criteria
-	ErrMissingResponse CriteriaParserErr = "missing response matching criteria array"
+	ErrMissingResponse ParserErr = "missing response matching criteria array"
 	// ErrInvalidRoute is returned when a Criteria contains an invalid route criteria
-	ErrInvalidRoute CriteriaParserErr = "invalid route criteria"
+	ErrInvalidRoute ParserErr = "invalid route criteria"
 	// ErrInvalidCallCriteria is returned when a Criteria contains an invalid callCriteria
-	ErrInvalidCallCriteria CriteriaParserErr = "invalid response criteria"
-	requestCallCriteria    string            = "request"
-	responseCallCriteria   string            = "response"
+	ErrInvalidCallCriteria ParserErr = "invalid response criteria"
+	requestCallCriteria    string    = "request"
+	responseCallCriteria   string    = "response"
 )
 
 var (
@@ -45,9 +45,8 @@ type Criteria struct {
 
 // RouteCriteria contains all the information to find a Route declaration
 type RouteCriteria struct {
-	Pkg          string         `yaml:"pkg"`
+	Hierarchy    string         `yaml:"hierarchy"`
 	FuncName     string         `yaml:"funcName"`
-	VarType      string         `yaml:"varType"`
 	HTTPMethod   string         `yaml:"httpMethod"`
 	PathIndex    int            `yaml:"pathIndex"`
 	HandlerIndex int            `yaml:"handlerIndex"`
@@ -56,19 +55,18 @@ type RouteCriteria struct {
 
 // CallCriteria contains all the information to match a function call with an argument
 type CallCriteria struct {
-	Pkg        string `yaml:"pkg"`
+	Hierarchy  string `yaml:"hierarchy"`
 	FuncName   string `yaml:"funcName"`
-	VarType    string `yaml:"varType"`
 	ParamIndex int    `yaml:"paramIndex"`
 }
 
-// CriteriaDecoder is able to decode and validate a Criteria
-type CriteriaDecoder struct {
+// Decoder is able to decode and validate a Criteria
+type Decoder struct {
 	Logger *log.Logger
 }
 
 // ParseCriteriaFromYAML parses a Criteria from a YAML reader
-func (decoder CriteriaDecoder) ParseCriteriaFromYAML(r io.Reader, c *Criteria) error {
+func (decoder Decoder) ParseCriteriaFromYAML(r io.Reader, c *Criteria) error {
 	decoder.Logger.Printf("parsing criteria from reader\n")
 	err := yaml.NewDecoder(r).Decode(c)
 	if err != nil {
@@ -82,7 +80,7 @@ func (decoder CriteriaDecoder) ParseCriteriaFromYAML(r io.Reader, c *Criteria) e
 }
 
 // ValidateCriteria returns nil if the criteria is valid otherwise it returns the validation error
-func (decoder CriteriaDecoder) ValidateCriteria(c *Criteria) error {
+func (decoder Decoder) ValidateCriteria(c *Criteria) error {
 	if len(c.Routes) == 0 {
 		decoder.Logger.Printf("criteria validation error: %s\n", ErrMissingRoutes.Error())
 		return ErrMissingRoutes
@@ -114,7 +112,7 @@ func (decoder CriteriaDecoder) ValidateCriteria(c *Criteria) error {
 	return nil
 }
 
-func (decoder CriteriaDecoder) validateRoute(c *RouteCriteria) error {
+func (decoder Decoder) validateRoute(c *RouteCriteria) error {
 	if c.FuncName == "" {
 		decoder.Logger.Printf("route validation error: funcName must be a non empty string\n")
 		return ErrInvalidRoute
@@ -151,7 +149,7 @@ func (decoder CriteriaDecoder) validateRoute(c *RouteCriteria) error {
 	return nil
 }
 
-func (decoder CriteriaDecoder) validateCallCriteria(c *CallCriteria, callCriteriaName string) error {
+func (decoder Decoder) validateCallCriteria(c *CallCriteria, callCriteriaName string) error {
 	if c.FuncName == "" {
 		decoder.Logger.Printf("%s validation error: funcName must be a non empty string\n", callCriteriaName)
 		return ErrInvalidCallCriteria
@@ -164,8 +162,8 @@ func (decoder CriteriaDecoder) validateCallCriteria(c *CallCriteria, callCriteri
 }
 
 // NewCriteriaDecoder creates a CriteriaDecoder
-func NewCriteriaDecoder(logger *log.Logger) CriteriaDecoder {
-	return CriteriaDecoder{
+func NewCriteriaDecoder(logger *log.Logger) Decoder {
+	return Decoder{
 		Logger: logger,
 	}
 }

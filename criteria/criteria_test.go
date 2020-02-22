@@ -13,9 +13,8 @@ var (
 	defaultCriteria = Criteria{
 		Routes: []RouteCriteria{
 			RouteCriteria{
-				Pkg:          "packageName0",
+				Hierarchy:    "packageName0.varType0",
 				FuncName:     "funcName0",
-				VarType:      "varType0",
 				HTTPMethod:   "GET",
 				PathIndex:    1,
 				HandlerIndex: 2,
