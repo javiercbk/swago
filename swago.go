@@ -296,6 +296,7 @@ func NewSwaggerGenerator(rootPath, goPath string, logger *log.Logger) (*SwaggerG
 		goPath:     goPath,
 		ignoreList: ignoreList,
 		logger:     logger,
+		structs:    make(map[string]ast.StructDef),
 	}
 	generator.projectGoFiles, err = listGoFiles(rootPath, generator.ignoreList)
 	if err != nil {

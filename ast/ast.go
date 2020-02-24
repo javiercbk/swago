@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/javiercbk/swago/criteria"
 )
@@ -81,10 +80,9 @@ type Model struct {
 
 // Field is a struct field
 type Field struct {
-	Name     string
-	Type     string
-	IsStruct bool
-	Tag      string
+	Name string
+	Type string
+	Tag  string
 }
 
 // StructDef is a struct definition
@@ -143,7 +141,6 @@ type fileAST struct {
 }
 
 type cacheManager struct {
-	sync.Mutex
 	files  map[string]fileAST
 	logger *log.Logger
 }
@@ -323,14 +320,20 @@ func (m *cacheManager) FindStruct(filePath string, s *StructDef) error {
 					for _, f := range st.Fields.List {
 						buf := bytes.Buffer{}
 						extractHierarchy(f.Type, &buf)
+						typeStr := correctHierarchy(buf.String())
+						tag := ""
+						if f.Tag != nil {
+							tag = strings.Trim(f.Tag.Value, "`")
+						}
 						newField := Field{
-							Tag:  f.Tag.Value,
+							Tag:  tag,
 							Name: f.Names[0].Name,
-							Type: correctHierarchy(buf.String()),
+							Type: typeStr,
 						}
 						s.Fields = append(s.Fields, newField)
 					}
 					found = true
+					err = nil
 					return false
 				}
 			}
@@ -346,8 +349,6 @@ func (m *cacheManager) astForFile(filePath string) (fileAST, error) {
 	if ok {
 		return f, nil
 	}
-	m.Lock()
-	defer m.Unlock()
 	var err error
 	f = fileAST{
 		fset: token.NewFileSet(),
@@ -364,6 +365,7 @@ func (m *cacheManager) astForFile(filePath string) (fileAST, error) {
 func NewManager(logger *log.Logger) Manager {
 	return &cacheManager{
 		logger: logger,
+		files:  make(map[string]fileAST),
 	}
 }
 
@@ -446,6 +448,54 @@ func compositeLitToRoute(fset *token.FileSet, com *ast.CompositeLit, route *Rout
 func extractHierarchy(n ast.Node, buf *bytes.Buffer) {
 	switch x := n.(type) {
 	case *ast.StarExpr:
+		switch stX := x.X.(type) {
+		case *ast.Ident:
+			buf.WriteString("*")
+			buf.WriteString(stX.Name)
+		case *ast.SelectorExpr:
+			extractHierarchy(stX.X, buf)
+			buf.WriteString(".")
+			buf.WriteString("*")
+			buf.WriteString(stX.Sel.Name)
+		}
+	case *ast.SelectorExpr:
+		extractHierarchy(x.X, buf)
+		buf.WriteString(".")
+		buf.WriteString(x.Sel.Name)
+	case *ast.Field:
+		extractHierarchy(x.Type, buf)
+	case *ast.ArrayType:
+		buf.WriteString("[]")
+		extractHierarchy(x.Elt, buf)
+	case *ast.MapType:
+		buf.WriteString("map[")
+		extractHierarchy(x.Key, buf)
+		buf.WriteString("]")
+		extractHierarchy(x.Value, buf)
+	case *ast.Ident:
+		if buf.Len() > 0 && !strings.HasSuffix(buf.String(), "[]") {
+			buf.WriteString(".")
+		}
+		if x.Obj != nil {
+			switch f := x.Obj.Decl.(type) {
+			case *ast.Field:
+				extractHierarchy(f, buf)
+			case *ast.AssignStmt:
+				extractHierarchy(f.Rhs[0], buf)
+			case *ast.TypeSpec:
+				buf.WriteString(f.Name.Name)
+			}
+		} else {
+			buf.WriteString(x.Name)
+		}
+	case *ast.CompositeLit:
+		extractHierarchy(x.Type, buf)
+	}
+}
+
+func oldExtractHierarchy(n ast.Node, buf *bytes.Buffer) {
+	switch x := n.(type) {
+	case *ast.StarExpr:
 		extractHierarchy(x.X, buf)
 		buf.WriteString("*")
 	case *ast.SelectorExpr:
@@ -454,6 +504,9 @@ func extractHierarchy(n ast.Node, buf *bytes.Buffer) {
 		buf.WriteString(x.Sel.Name)
 	case *ast.Field:
 		extractHierarchy(x.Type, buf)
+	case *ast.ArrayType:
+		extractHierarchy(x.Elt, buf)
+		buf.WriteString("[]")
 	case *ast.Ident:
 		if buf.Len() > 0 {
 			buf.WriteString(".")
