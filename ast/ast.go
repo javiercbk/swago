@@ -127,6 +127,7 @@ const (
 type Manager interface {
 	GetFileImports(filePath string) ([]FileImport, error)
 	ExtractRoutes(f *Function, routeCriterias []criteria.RouteCriteria) []Route
+	FindStructLiteral(filePath string, structRoute *criteria.StructRoute) ([]Route, error)
 	ExtractFuncCalls(f Function) []Function
 	FindValue(filePath string, id *Variable) error
 	FindFuncDeclaration(filePath string, funcDecl *Function) error
@@ -191,17 +192,6 @@ func (m *cacheManager) ExtractRoutes(f *Function, routeCriterias []criteria.Rout
 							}
 						}
 					}
-				case *ast.CompositeLit:
-					for _, c := range routeCriterias {
-						if c.StructRoute != nil {
-							if matchesStructRoute(x, c) {
-								foundRoute := Route{
-									File: f.File,
-								}
-								compositeLitToRoute(f.fAST.fset, x, &foundRoute)
-							}
-						}
-					}
 				}
 			}
 			return true
@@ -213,11 +203,13 @@ func (m *cacheManager) ExtractRoutes(f *Function, routeCriterias []criteria.Rout
 func (m *cacheManager) ExtractFuncCalls(f Function) []Function {
 	functions := make([]Function, 0)
 	ast.Inspect(f.block, func(n ast.Node) bool {
-		callExpr, ok := n.(*ast.CallExpr)
-		if ok {
-			function := Function{}
-			extractFunction(callExpr, &function)
-			functions = append(functions, function)
+		if n != nil {
+			callExpr, ok := n.(*ast.CallExpr)
+			if ok {
+				function := Function{}
+				extractFunction(callExpr, &function)
+				functions = append(functions, function)
+			}
 		}
 		return true
 	})
@@ -265,7 +257,7 @@ func (m *cacheManager) FindFuncDeclaration(filePath string, decl *Function) erro
 				File: filePath,
 				fAST: fAST,
 			}
-			extractFunction(funcDecl.Recv.List[0].Type, &fdecl)
+			extractFunction(d, &fdecl)
 			if fdecl.Name == decl.Name && fdecl.Hierarchy == decl.Hierarchy {
 				// TODO: think if it should check the arguments and the return type
 				decl.block = funcDecl.Body
@@ -301,6 +293,31 @@ func (m *cacheManager) FindCallCriteria(funcDecl Function, c criteria.CallCriter
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (m *cacheManager) FindStructLiteral(filePath string, structRoute *criteria.StructRoute) ([]Route, error) {
+	routes := make([]Route, 0)
+	fAST, err := m.astForFile(filePath)
+	if err != nil {
+		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
+		return routes, err
+	}
+	ast.Inspect(fAST.file, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.CompositeLit:
+			if structRoute != nil {
+				if matchesStructRoute(x, *structRoute) {
+					foundRoute := Route{
+						File: filePath,
+					}
+					compositeLitToRoute(fAST.fset, x, &foundRoute)
+					routes = append(routes, foundRoute)
+				}
+			}
+		}
+		return true
+	})
+	return routes, nil
 }
 
 func (m *cacheManager) FindStruct(filePath string, s *StructDef) error {
@@ -405,10 +422,10 @@ func matchesRouteCriteria(callExpr *ast.CallExpr, routeCriteria criteria.RouteCr
 	return matches
 }
 
-func matchesStructRoute(com *ast.CompositeLit, routeCriteria criteria.RouteCriteria) bool {
+func matchesStructRoute(com *ast.CompositeLit, structRoute criteria.StructRoute) bool {
 	v := Variable{}
 	extractVariable(com.Type, &v)
-	return routeCriteria.StructRoute.Name == v.Name && v.Hierarchy == routeCriteria.StructRoute.Hierarchy
+	return structRoute.Name == v.Name && v.Hierarchy == structRoute.Hierarchy
 }
 
 func callExprToRoute(fset *token.FileSet, callExpr *ast.CallExpr, routeCriteria criteria.RouteCriteria, route *Route) {

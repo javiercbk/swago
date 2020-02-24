@@ -26,7 +26,7 @@ func (m generatorErr) Error() string {
 const (
 	modFile = "go.mod"
 	// ErrMainNotFound is returned when a main function is not found
-	ErrMainNotFound generatorErr = "starting point not found"
+	ErrFuncNotFound generatorErr = "starting point not found"
 )
 
 var (
@@ -73,21 +73,38 @@ type SwaggerGenerator struct {
 
 // GenerateSwaggerDoc generates the swagger documentation
 func (e *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria) error {
-	err := e.initStructRoute(&projectCriterias)
-	if err != nil {
-		e.logger.Printf("error finding structs: %v\n", err)
-		return err
+	for i := range projectCriterias.Routes {
+		if projectCriterias.Routes[i].StructRoute != nil {
+			err := e.initStructRoute(projectCriterias.Routes[i].StructRoute)
+			if err != nil {
+				e.logger.Printf("error finding structs: %v\n", err)
+				return err
+			}
+			err = e.findStructCompositeLiteral(projectCriterias.Routes[i].StructRoute)
+			if err != nil {
+				e.logger.Printf("error searching for struct route: %v\n", err)
+				return err
+			}
+		}
 	}
-	f := ast.Function{
-		Name: "main",
-	}
-	err = e.depthFirstExplore(f, e.findRouteFactory(projectCriterias.Routes))
-	if err != nil {
-		e.logger.Printf("error finding routes: %v\n", err)
-		return err
+	for i := range projectCriterias.Routes {
+		if projectCriterias.Routes[i].FuncRoute != nil {
+			f := ast.Function{
+				Name: "main",
+			}
+			err := e.findFunction(&f)
+			if err != nil {
+				return ErrFuncNotFound
+			}
+			err = e.breadthFirstExplore(&f, e.findRouteFactory(projectCriterias.Routes))
+			if err != nil {
+				e.logger.Printf("error finding routes: %v\n", err)
+				return err
+			}
+		}
 	}
 	for i := range e.routes {
-		err = e.resolvePathValue(&e.routes[i])
+		err := e.resolvePathValue(&e.routes[i])
 		if err != nil {
 			e.logger.Printf("error resolving path values: %v\n", err)
 			return err
@@ -102,41 +119,74 @@ func (e *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 	return nil
 }
 
-func (e *SwaggerGenerator) initStructRoute(projectCriterias *criteria.Criteria) error {
-	for i := range projectCriterias.Routes {
-		if projectCriterias.Routes[i].StructRoute != nil {
-			for _, goFile := range e.projectGoFiles {
-				// FIXME: not checking package (hierarchy)
-				structDef := ast.StructDef{
-					Name: projectCriterias.Routes[i].StructRoute.Name,
-				}
-				err := e.astManager.FindStruct(goFile, &structDef)
-				if err == nil {
-					e.structs[structDef.Name] = structDef
-				}
-			}
+func (e *SwaggerGenerator) initStructRoute(structRoute *criteria.StructRoute) error {
+	for _, goFile := range e.projectGoFiles {
+		// FIXME: not checking package (hierarchy)
+		structDef := ast.StructDef{
+			Name: structRoute.Name,
+		}
+		err := e.astManager.FindStruct(goFile, &structDef)
+		if err == nil {
+			e.structs[structDef.Name] = structDef
+		} else if err != ast.ErrNotFound {
+			return err
 		}
 	}
 	return nil
 }
 
-func (e *SwaggerGenerator) depthFirstExplore(f ast.Function, analyze analisisFunc) error {
-	err := e.findFunction(&f)
-	if err != nil {
-		return ErrMainNotFound
+func (e *SwaggerGenerator) findStructCompositeLiteral(structRoute *criteria.StructRoute) error {
+	for _, goFile := range e.projectGoFiles {
+		routesFound, err := e.astManager.FindStructLiteral(goFile, structRoute)
+		if err != nil {
+			return err
+		}
+		for _, r := range routesFound {
+			err = e.resolveRoute(structRoute, &r)
+			if err != nil {
+				e.logger.Printf("error resolving route %v: %v\n", r, err)
+				return err
+			}
+			e.routes = append(e.routes, r)
+
+		}
 	}
-	err = analyze(f)
+	return nil
+}
+
+func (e *SwaggerGenerator) resolveRoute(structRoute *criteria.StructRoute, route *ast.Route) error {
+	for k, v := range route.Struct.Values {
+		if structRoute.PathField == k {
+			route.Path = v
+		} else if structRoute.HandlerField == k {
+			route.Handler = ast.Function{
+				Name:      v.Name,
+				Hierarchy: v.Hierarchy,
+			}
+		} else if structRoute.HTTPMethodField == k {
+			methodName := v.Name
+			if v.Value != "" {
+				methodName = v.Value
+			}
+			route.HTTPMethod = criteria.MatchHTTPMethod(methodName)
+		}
+	}
+	return nil
+}
+
+func (e *SwaggerGenerator) breadthFirstExplore(f *ast.Function, analyze analisisFunc) error {
+	err := analyze(*f)
 	if err != nil {
 		e.logger.Printf("error analyzing function %s: %v\n", f.Name, err)
 		return err
 	}
-	functions := e.astManager.ExtractFuncCalls(f)
+	functions := e.astManager.ExtractFuncCalls(*f)
 	for i := range functions {
 		err := e.findFunction(&functions[i])
 		if err != nil {
 			return err
 		}
-		e.depthFirstExplore(functions[i], analyze)
+		e.breadthFirstExplore(&functions[i], analyze)
 	}
 	return nil
 }
@@ -144,55 +194,55 @@ func (e *SwaggerGenerator) depthFirstExplore(f ast.Function, analyze analisisFun
 func (e *SwaggerGenerator) findFunction(f *ast.Function) error {
 	for _, goFile := range e.projectGoFiles {
 		err := e.astManager.FindFuncDeclaration(goFile, f)
-		if err != ast.ErrNotFound {
+		if err == nil {
 			return nil
+		} else if err != ast.ErrNotFound {
+			return err
 		}
 	}
-	return nil
+	return ast.ErrNotFound
 }
 
 func (e *SwaggerGenerator) resolvePathValue(r *ast.Route) error {
 	if len(r.Path.Value) == 0 {
+		foldersToCheck := make([]string, 1, 2)
 		// Path is a variable, we need to get the actual value
 		if len(r.Path.Hierarchy) == 0 {
-			foldersToCheck := make([]string, 1, 2)
 			foldersToCheck[0] = e.resolveImportPath(r.Path.Hierarchy)
-			imports, err := e.astManager.GetFileImports(r.File)
+		}
+		imports, err := e.astManager.GetFileImports(r.File)
+		if err != nil {
+			e.logger.Printf("error getting file imports for file %s: %v\n", r.File, err)
+			return err
+		}
+		if len(imports) > 0 {
+			for _, imp := range imports {
+				foldersToCheck = append(foldersToCheck, e.resolveImportPath(imp.Pkg))
+			}
+		}
+		dotImportsFolders, err := e.dotImportsForFile(r.File)
+		if err != nil {
+			e.logger.Printf("error retrieving dot imports folders for file %s: %v\n", r.File, err)
+			return err
+		}
+		if len(dotImportsFolders) > 0 {
+			foldersToCheck = append(foldersToCheck, dotImportsFolders...)
+		}
+		for _, folderToCheck := range foldersToCheck {
+			goFiles, err := listGoFiles(folderToCheck, e.ignoreList)
 			if err != nil {
-				e.logger.Printf("error getting file imports for file %s: %v\n", r.File, err)
+				e.logger.Printf("error listing files in directory %s: %v\n", folderToCheck, err)
 				return err
 			}
-			if len(imports) > 0 {
-				for _, imp := range imports {
-					foldersToCheck = append(foldersToCheck, e.resolveImportPath(imp.Pkg))
-				}
-			}
-			dotImportsFolders, err := e.dotImportsForFile(r.File)
-			if err != nil {
-				e.logger.Printf("error retrieving dot imports folders for file %s: %v\n", r.File, err)
-				return err
-			}
-			if len(dotImportsFolders) > 0 {
-				foldersToCheck = append(foldersToCheck, dotImportsFolders...)
-			}
-			for _, folderToCheck := range foldersToCheck {
-				goFiles, err := listGoFiles(folderToCheck, e.ignoreList)
-				if err != nil {
-					e.logger.Printf("error listing files in directory %s: %v\n", folderToCheck, err)
+			for _, goFile := range goFiles {
+				err = e.astManager.FindValue(goFile, &r.Path)
+				if err == nil {
+					return nil
+				} else if err != ast.ErrNotFound {
+					e.logger.Printf("error findinding value on file %s: %v\n", goFile, err)
 					return err
 				}
-				for _, goFile := range goFiles {
-					err = e.astManager.FindValue(goFile, &r.Path)
-					if err == nil {
-						return nil
-					} else if err != ast.ErrNotFound {
-						e.logger.Printf("error findinding value on file %s: %v\n", goFile, err)
-						return err
-					}
-				}
 			}
-		} else {
-
 		}
 	}
 	return nil
@@ -220,7 +270,7 @@ func (e *SwaggerGenerator) findHandlerDeclaration(r *ast.Route) error {
 			}
 		}
 	} else {
-
+		//TODO: find handler in this package
 	}
 	return nil
 }
@@ -234,11 +284,8 @@ func (e *SwaggerGenerator) findRouteFactory(criterias []criteria.RouteCriteria) 
 // findRoutes attempts to find all the routes in a project folder
 func (e *SwaggerGenerator) findRoutes(f ast.Function, criterias []criteria.RouteCriteria) error {
 	e.logger.Printf("searching all go files in directory %s recursively\n", e.rootPath)
-	for _, goFile := range e.projectGoFiles {
-		e.logger.Printf("searching for routes in file %s\n", goFile)
-		routesForFile := e.astManager.ExtractRoutes(&f, criterias)
-		e.routes = append(e.routes, routesForFile...)
-	}
+	routesForFile := e.astManager.ExtractRoutes(&f, criterias)
+	e.routes = append(e.routes, routesForFile...)
 	return nil
 }
 

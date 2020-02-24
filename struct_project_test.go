@@ -61,7 +61,7 @@ func TestInitStructRoute(t *testing.T) {
 			criteria.RouteCriteria{
 				StructRoute: &criteria.StructRoute{
 					Name:            structRouteName,
-					Hierarchy:       "routes",
+					Hierarchy:       "r",
 					PathField:       "Pattern",
 					HandlerField:    "HandlerFunc",
 					HTTPMethodField: "Method",
@@ -69,7 +69,7 @@ func TestInitStructRoute(t *testing.T) {
 			},
 		},
 	}
-	err = sg.initStructRoute(&projectCriteria)
+	err = sg.initStructRoute(projectCriteria.Routes[0].StructRoute)
 	if err != nil {
 		t.Fatalf("error initializing struct route: %v", err)
 	}
@@ -84,6 +84,42 @@ func TestInitStructRoute(t *testing.T) {
 		found := structDef.Fields[i]
 		expected := expectedFields[i]
 		compareFields(t, found, expected)
+	}
+}
+
+func TestFindStructCompositeLiteral(t *testing.T) {
+	projectPath, err := filepath.Abs(structProjectPath)
+	if err != nil {
+		t.Fatalf("error getting absolute path of %s: %v", structProjectPath, err)
+	}
+	sg, err := NewSwaggerGenerator(projectPath, projectPath, log.New(ioutil.Discard, "", log.LstdFlags))
+	if err != nil {
+		t.Fatalf("error creating a swagger generator: %v", err)
+	}
+	projectCriteria := criteria.Criteria{
+		Routes: []criteria.RouteCriteria{
+			criteria.RouteCriteria{
+				StructRoute: &criteria.StructRoute{
+					Name:            structRouteName,
+					Hierarchy:       "r",
+					PathField:       "Pattern",
+					HandlerField:    "HandlerFunc",
+					HTTPMethodField: "Method",
+				},
+			},
+		},
+	}
+	err = sg.initStructRoute(projectCriteria.Routes[0].StructRoute)
+	if err != nil {
+		t.Fatalf("error initializing struct route: %v", err)
+	}
+	err = sg.findStructCompositeLiteral(projectCriteria.Routes[0].StructRoute)
+	if err != nil {
+		t.Fatalf("error finding composite literal: %v", err)
+	}
+	foundRoutesLen := len(sg.routes)
+	if foundRoutesLen != 3 {
+		t.Fatalf("expected 3 routes to be found but got %d", foundRoutesLen)
 	}
 }
 
