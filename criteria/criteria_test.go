@@ -22,17 +22,15 @@ var (
 		},
 		Request: []CallCriteria{
 			{
-				Pkg:        "requestPackageName0",
+				Hierarchy:  "requestPackageName0.requestVarType0",
 				FuncName:   "requestFuncName0",
-				VarType:    "requestVarType0",
 				ParamIndex: 0,
 			},
 		},
 		Response: []CallCriteria{
 			{
-				Pkg:        "responsePackageName0",
+				Hierarchy:  "responsePackageName0.responseVarType0",
 				FuncName:   "responseFuncName0",
-				VarType:    "responseVarType0",
 				ParamIndex: 0,
 			},
 		},
@@ -40,9 +38,8 @@ var (
 	missingRouteHandlerIndexCriteria = Criteria{
 		Routes: []RouteCriteria{
 			RouteCriteria{
-				Pkg:          "packageName0",
+				Hierarchy:    "packageName0.varType0",
 				FuncName:     "funcName0",
-				VarType:      "varType0",
 				HTTPMethod:   "GET",
 				PathIndex:    1,
 				HandlerIndex: 0,
@@ -50,17 +47,15 @@ var (
 		},
 		Request: []CallCriteria{
 			{
-				Pkg:        "requestPackageName0",
+				Hierarchy:  "requestPackageName0.requestVarType0",
 				FuncName:   "requestFuncName0",
-				VarType:    "requestVarType0",
 				ParamIndex: 0,
 			},
 		},
 		Response: []CallCriteria{
 			{
-				Pkg:        "responsePackageName0",
+				Hierarchy:  "responsePackageName0.responseVarType0",
 				FuncName:   "responseFuncName0",
-				VarType:    "responseVarType0",
 				ParamIndex: 0,
 			},
 		},
@@ -68,9 +63,8 @@ var (
 	missingRoutePathIndexCriteria = Criteria{
 		Routes: []RouteCriteria{
 			RouteCriteria{
-				Pkg:          "packageName0",
+				Hierarchy:    "packageName0.varType0",
 				FuncName:     "funcName0",
-				VarType:      "varType0",
 				HTTPMethod:   "GET",
 				PathIndex:    0,
 				HandlerIndex: 2,
@@ -78,17 +72,15 @@ var (
 		},
 		Request: []CallCriteria{
 			{
-				Pkg:        "requestPackageName0",
+				Hierarchy:  "requestPackageName0.requestVarType0",
 				FuncName:   "requestFuncName0",
-				VarType:    "requestVarType0",
 				ParamIndex: 0,
 			},
 		},
 		Response: []CallCriteria{
 			{
-				Pkg:        "responsePackageName0",
+				Hierarchy:  "responsePackageName0.responseVarType0",
 				FuncName:   "responseFuncName0",
-				VarType:    "responseVarType0",
 				ParamIndex: 0,
 			},
 		},
@@ -96,16 +88,15 @@ var (
 	fullCriteria = Criteria{
 		Routes: []RouteCriteria{
 			RouteCriteria{
-				Pkg:          "packageName0",
+				Hierarchy:    "packageName0.varType0",
 				FuncName:     "funcName0",
-				VarType:      "varType0",
 				HTTPMethod:   "GET",
 				PathIndex:    1,
 				HandlerIndex: 2,
 			},
 			RouteCriteria{
 				FuncName:     "funcName1",
-				VarType:      "varType1",
+				Hierarchy:    "varType1",
 				HTTPMethod:   "POST",
 				PathIndex:    1,
 				HandlerIndex: 2,
@@ -136,14 +127,13 @@ var (
 		},
 		Request: []CallCriteria{
 			{
-				Pkg:        "requestPackageName0",
+				Hierarchy:  "requestPackageName0.requestVarType0",
 				FuncName:   "requestFuncName0",
-				VarType:    "requestVarType0",
 				ParamIndex: 0,
 			},
 			{
 				FuncName:   "requestFuncName1",
-				VarType:    "requestVarType1",
+				Hierarchy:  "requestVarType1",
 				ParamIndex: 1,
 			},
 			{
@@ -153,14 +143,13 @@ var (
 		},
 		Response: []CallCriteria{
 			{
-				Pkg:        "responsePackageName0",
+				Hierarchy:  "responsePackageName0.responseVarType0",
 				FuncName:   "responseFuncName0",
-				VarType:    "responseVarType0",
 				ParamIndex: 0,
 			},
 			{
 				FuncName:   "responseFuncName1",
-				VarType:    "responseVarType1",
+				Hierarchy:  "responseVarType1",
 				ParamIndex: 1,
 			},
 			{
@@ -287,14 +276,11 @@ func compareCallCriterias(t *testing.T, calls, expected []CallCriteria) {
 }
 
 func compareRoute(t *testing.T, route, expected RouteCriteria) {
-	if route.Pkg != expected.Pkg {
-		t.Fatalf("expected Pkg %s but got %s", expected.Pkg, route.Pkg)
+	if route.Hierarchy != expected.Hierarchy {
+		t.Fatalf("expected Hierarchy %s but got %s", expected.Hierarchy, route.Hierarchy)
 	}
 	if route.FuncName != expected.FuncName {
 		t.Fatalf("expected FuncName %s but got %s", expected.FuncName, route.FuncName)
-	}
-	if route.VarType != expected.VarType {
-		t.Fatalf("expected VarType %s but got %s", expected.VarType, route.VarType)
 	}
 	if route.HTTPMethod != expected.HTTPMethod {
 		t.Fatalf("expected HTTPMethod %s but got %s", expected.HTTPMethod, route.HTTPMethod)
@@ -308,14 +294,11 @@ func compareRoute(t *testing.T, route, expected RouteCriteria) {
 }
 
 func compareCallCriteria(t *testing.T, call, expected CallCriteria) {
-	if call.Pkg != expected.Pkg {
-		t.Fatalf("expected Pkg %s but got %s", expected.Pkg, call.Pkg)
+	if call.Hierarchy != expected.Hierarchy {
+		t.Fatalf("expected Hierarchy %s but got %s", expected.Hierarchy, call.Hierarchy)
 	}
 	if call.FuncName != expected.FuncName {
 		t.Fatalf("expected FuncName %s but got %s", expected.FuncName, call.FuncName)
-	}
-	if call.VarType != expected.VarType {
-		t.Fatalf("expected VarType %s but got %s", expected.VarType, call.VarType)
 	}
 	if call.ParamIndex != expected.ParamIndex {
 		t.Fatalf("expected ParamIndex %d but got %d", expected.ParamIndex, call.ParamIndex)

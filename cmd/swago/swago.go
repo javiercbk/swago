@@ -16,12 +16,14 @@ func main() {
 	if err != nil {
 		logger.Fatalf("error getting absolute path for dir %s: %v\n", projectDirPath, err)
 	}
-	codeExplorer, err := swago.NewCodeExplorer(absProjectPath, "", logger)
+	swaggerGenerator, err := swago.NewSwaggerGenerator(absProjectPath, "", logger)
 	if err != nil {
 		logger.Fatalf("error creating code explorer %v\n", err)
 	}
-	routeCriterias := make([]criteria.RouteCriteria, 0)
-	_, err = codeExplorer.FindRoutes(routeCriterias)
+	c := criteria.Criteria{
+		Routes: make([]criteria.RouteCriteria, 0),
+	}
+	err = swaggerGenerator.GenerateSwaggerDoc(c)
 	if err != nil {
 		logger.Fatalf("error finding routes %v\n", err)
 	}

@@ -1,16 +1,13 @@
 routes:
-- pkg: packageName0
+- hierarchy: packageName0.varType0
   funcName: funcName0
-  varType: varType0
   httpMethod: get
   pathIndex: 1
   handlerIndex: 2
 request:
-- pkg: requestPackageName0
+- hierarchy: requestPackageName0.requestVarType0
   funcName: requestFuncName0
-  varType: requestVarType0
   paramIndex: 0
 response:
-- pkg: responsePackageName0
-  varType: responseVarType0
+- hierarchy: responsePackageName0.responseVarType0
   paramIndex: 0

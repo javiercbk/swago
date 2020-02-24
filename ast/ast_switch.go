@@ -1,6 +1,7 @@
 package ast
 
 import (
+	"bytes"
 	"go/ast"
 
 	"github.com/javiercbk/swago/criteria"
@@ -24,6 +25,7 @@ func searchForHTTPMethodSwitch(rootNode ast.Node, switchVarType string) []switch
 					if ok {
 						v := Variable{}
 						extractVariable(ident, &v)
+						v = extractOriginalDefinition(v)
 						if v.Hierarchy == switchVarType {
 							handlersFound = extractHTTPMethodsFromSwitch(x)
 							done = true
@@ -77,9 +79,10 @@ func isHTTPMethodSelectorSwitch(selectorExpr *ast.SelectorExpr, switchVarType st
 	if selectorExpr.Sel.Name == selMethod {
 		ident, ok := selectorExpr.X.(*ast.Ident)
 		if ok {
-			v := Variable{}
-			extractVariable(ident, &v)
-			if v.Hierarchy == switchVarType {
+			buf := bytes.Buffer{}
+			extractHierarchy(ident, &buf)
+			hierarchy := correctHierarchy(buf.String())
+			if hierarchy == switchVarType {
 				return true
 			}
 		}

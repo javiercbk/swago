@@ -43,14 +43,29 @@ type Criteria struct {
 	Response []CallCriteria  `yaml:"response"`
 }
 
+// FuncRoute matches a route that is defined as a function call
+type FuncRoute struct {
+	FuncName     string     `yaml:"funcName"`
+	Hierarchy    string     `yaml:"hierarchy"`
+	HTTPMethod   string     `yaml:"httpMethod"`
+	PathIndex    int        `yaml:"pathIndex"`
+	HandlerIndex int        `yaml:"handlerIndex"`
+	ChildRoute   *FuncRoute `yaml:"childRoute,omitempty"`
+}
+
+// StructRoute matches a route that is defined as a struct
+type StructRoute struct {
+	Name            string `yaml:"name"`
+	Hierarchy       string `yaml:"hierarchy"`
+	PathField       string `yaml:"pathField"`
+	HandlerField    string `yaml:"handlerField"`
+	HTTPMethodField string `yaml:"httpMethodField"`
+}
+
 // RouteCriteria contains all the information to find a Route declaration
 type RouteCriteria struct {
-	Hierarchy    string         `yaml:"hierarchy"`
-	FuncName     string         `yaml:"funcName"`
-	HTTPMethod   string         `yaml:"httpMethod"`
-	PathIndex    int            `yaml:"pathIndex"`
-	HandlerIndex int            `yaml:"handlerIndex"`
-	ChildRoute   *RouteCriteria `yaml:"childRoute,omitempty"`
+	StructRoute *StructRoute `yaml:"structRoute"`
+	FuncRoute   *FuncRoute   `yaml:"funcRoute"`
 }
 
 // CallCriteria contains all the information to match a function call with an argument
@@ -113,6 +128,16 @@ func (decoder Decoder) ValidateCriteria(c *Criteria) error {
 }
 
 func (decoder Decoder) validateRoute(c *RouteCriteria) error {
+	if c.FuncRoute != nil {
+		return decoder.validateFuncRoute(c.FuncRoute)
+	} else if c.StructRoute != nil {
+		return decoder.validateStructRoute(c.StructRoute)
+	}
+	decoder.Logger.Printf("route is neither a func route nor a struct route\n")
+	return ErrInvalidRoute
+}
+
+func (decoder Decoder) validateFuncRoute(c *FuncRoute) error {
 	if c.FuncName == "" {
 		decoder.Logger.Printf("route validation error: funcName must be a non empty string\n")
 		return ErrInvalidRoute
@@ -135,15 +160,34 @@ func (decoder Decoder) validateRoute(c *RouteCriteria) error {
 		decoder.Logger.Printf("route validation error: func %s declared a negative path param index\n", c.FuncName)
 		return ErrInvalidRoute
 	}
-	if c.ChildRoute != nil {
-		return decoder.validateRoute(c.ChildRoute)
-	}
 	if c.HandlerIndex < 0 {
 		decoder.Logger.Printf("route validation error: func %s declared a negative handler param index\n", c.FuncName)
 		return ErrInvalidRoute
 	}
-	if c.PathIndex == c.HandlerIndex {
+	if c.ChildRoute != nil {
+		return decoder.validateFuncRoute(c.ChildRoute)
+	} else if c.PathIndex == c.HandlerIndex {
 		decoder.Logger.Printf("route validation error: func %s either does not specified both path and handler, or assigned the same index for both\n", c.FuncName)
+		return ErrInvalidRoute
+	}
+	return nil
+}
+
+func (decoder Decoder) validateStructRoute(c *StructRoute) error {
+	if len(c.Name) == 0 {
+		decoder.Logger.Printf("missing struct name field\n")
+		return ErrInvalidRoute
+	}
+	if len(c.HTTPMethodField) == 0 {
+		decoder.Logger.Printf("missing http method field\n")
+		return ErrInvalidRoute
+	}
+	if len(c.HandlerField) == 0 {
+		decoder.Logger.Printf("missing handler field\n")
+		return ErrInvalidRoute
+	}
+	if len(c.PathField) == 0 {
+		decoder.Logger.Printf("missing path field\n")
 		return ErrInvalidRoute
 	}
 	return nil

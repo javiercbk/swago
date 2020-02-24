@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/javiercbk/swago/criteria"
 )
@@ -37,10 +38,12 @@ type Variable struct {
 
 // Function is a function
 type Function struct {
+	File      string
 	Hierarchy string
 	Name      string
 	Args      []Variable
 	Return    []Variable
+	fAST      fileAST
 	block     *ast.BlockStmt
 	callExpr  *ast.CallExpr
 }
@@ -58,10 +61,13 @@ type Route struct {
 	File          string
 	HTTPMethod    string
 	Path          Variable
+	Middlewares   []string
+	ChildRoutes   []Route
 	Handler       Function
 	RequestModel  Model
 	ResponseModel Model
-	FuncCall      FuncCall
+	FuncCall      *FuncCall
+	Struct        *Struct
 }
 
 // Model is a serializable struct found that can parse incoming requests or serialize outgoing responses
@@ -81,10 +87,16 @@ type Field struct {
 	Tag      string
 }
 
-// Struct is a struct
-type Struct struct {
+// StructDef is a struct definition
+type StructDef struct {
 	Name   string
 	Fields []Field
+}
+
+// Struct is a struct
+type Struct struct {
+	s      *StructDef
+	Values map[string]Variable
 }
 
 const (
@@ -116,39 +128,41 @@ const (
 // Manager is an abstraction that can read ast for files
 type Manager interface {
 	GetFileImports(filePath string) ([]FileImport, error)
-	ExtractRoutesFromFile(filePath string, criterias []criteria.RouteCriteria) ([]Route, error)
+	ExtractRoutes(f *Function, routeCriterias []criteria.RouteCriteria) []Route
+	ExtractFuncCalls(f Function) []Function
 	FindValue(filePath string, id *Variable) error
 	FindFuncDeclaration(filePath string, funcDecl *Function) error
 	// FindCallsInFunc(funcDecl FuncDecl) []FuncCall
 	FindCallCriteria(funcDecl Function, c criteria.CallCriteria, paramIdentifier *Variable) error
-	FindStruct(filePath string, s *Struct) error
+	FindStruct(filePath string, s *StructDef) error
 }
 
-type naiveManager struct {
+type fileAST struct {
+	file *ast.File
+	fset *token.FileSet
+}
+
+type cacheManager struct {
+	sync.Mutex
+	files  map[string]fileAST
 	logger *log.Logger
 }
-
-type inspectorFunc = func(ast.Node) bool
-
-// type nodeMatcher = func(ast.Node) ast.Node
-type inspectorBuilderFunc func(*token.FileSet) inspectorFunc
 
 type switchRouterHandler struct {
 	HTTPMethod string
 	RootNode   ast.Node
 }
 
-func (m naiveManager) GetFileImports(filePath string) ([]FileImport, error) {
+func (m *cacheManager) GetFileImports(filePath string) ([]FileImport, error) {
 	var imports []FileImport
-	fset := token.NewFileSet()
-	f, err := m.astForFile(filePath, fset)
+	fAST, err := m.astForFile(filePath)
 	if err != nil {
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return imports, err
 	}
-	imports = make([]FileImport, len(f.Imports))
-	for i := range f.Imports {
-		fileImport := f.Imports[i]
+	imports = make([]FileImport, len(fAST.file.Imports))
+	for i := range fAST.file.Imports {
+		fileImport := fAST.file.Imports[i]
 		fi := FileImport{
 			Pkg: fileImport.Path.Value,
 		}
@@ -160,27 +174,67 @@ func (m naiveManager) GetFileImports(filePath string) ([]FileImport, error) {
 	return imports, nil
 }
 
-func (m naiveManager) ExtractRoutesFromFile(filePath string, routeCriterias []criteria.RouteCriteria) ([]Route, error) {
-	var routes []Route
-	fset := token.NewFileSet()
-	f, err := m.astForFile(filePath, fset)
-	if err != nil {
-		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
-		return routes, err
+func (m *cacheManager) ExtractRoutes(f *Function, routeCriterias []criteria.RouteCriteria) []Route {
+	routesFound := make([]Route, 0)
+	if f.block != nil {
+		ast.Inspect(f.block, func(n ast.Node) bool {
+			if n != nil {
+				switch x := n.(type) {
+				case *ast.CallExpr:
+					for _, c := range routeCriterias {
+						if c.FuncRoute != nil {
+							if matchesRouteCriteria(x, c) {
+								foundRoute := Route{
+									File: f.File,
+								}
+								callExprToRoute(f.fAST.fset, x, c, &foundRoute)
+								routesFound = append(routesFound, foundRoute)
+								// if CallExpr matched one criteria, we don't want to compare it to other criterias
+								break
+							}
+						}
+					}
+				case *ast.CompositeLit:
+					for _, c := range routeCriterias {
+						if c.StructRoute != nil {
+							if matchesStructRoute(x, c) {
+								foundRoute := Route{
+									File: f.File,
+								}
+								compositeLitToRoute(f.fAST.fset, x, &foundRoute)
+							}
+						}
+					}
+				}
+			}
+			return true
+		})
 	}
-	searchFileForRouteCriteria(filePath, fset, f, routeCriterias)
-	return routes, nil
+	return routesFound
 }
 
-func (m naiveManager) FindValue(filePath string, v *Variable) error {
-	fset := token.NewFileSet()
-	f, err := m.astForFile(filePath, fset)
+func (m *cacheManager) ExtractFuncCalls(f Function) []Function {
+	functions := make([]Function, 0)
+	ast.Inspect(f.block, func(n ast.Node) bool {
+		callExpr, ok := n.(*ast.CallExpr)
+		if ok {
+			function := Function{}
+			extractFunction(callExpr, &function)
+			functions = append(functions, function)
+		}
+		return true
+	})
+	return functions
+}
+
+func (m *cacheManager) FindValue(filePath string, v *Variable) error {
+	fAST, err := m.astForFile(filePath)
 	if err != nil {
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return err
 	}
-	for i := range f.Decls {
-		genDecl, ok := f.Decls[i].(*ast.GenDecl)
+	for _, d := range fAST.file.Decls {
+		genDecl, ok := d.(*ast.GenDecl)
 		if ok && len(genDecl.Specs) > 0 {
 			valSpecs, ok := genDecl.Specs[0].(*ast.ValueSpec)
 			if ok && len(valSpecs.Names) > 0 && len(valSpecs.Values) > 0 {
@@ -200,18 +254,20 @@ func (m naiveManager) FindValue(filePath string, v *Variable) error {
 	return ErrNotFound
 }
 
-func (m naiveManager) FindFuncDeclaration(filePath string, decl *Function) error {
-	fset := token.NewFileSet()
-	f, err := m.astForFile(filePath, fset)
+func (m *cacheManager) FindFuncDeclaration(filePath string, decl *Function) error {
+	fAST, err := m.astForFile(filePath)
 	if err != nil {
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return err
 	}
 	err = ErrNotFound
-	for _, d := range f.Decls {
+	for _, d := range fAST.file.Decls {
 		funcDecl, ok := d.(*ast.FuncDecl)
 		if ok {
-			fdecl := Function{}
+			fdecl := Function{
+				File: filePath,
+				fAST: fAST,
+			}
 			extractFunction(funcDecl.Recv.List[0].Type, &fdecl)
 			if fdecl.Name == decl.Name && fdecl.Hierarchy == decl.Hierarchy {
 				// TODO: think if it should check the arguments and the return type
@@ -224,7 +280,7 @@ func (m naiveManager) FindFuncDeclaration(filePath string, decl *Function) error
 	return err
 }
 
-func (m naiveManager) FindCallCriteria(funcDecl Function, c criteria.CallCriteria, paramVar *Variable) error {
+func (m *cacheManager) FindCallCriteria(funcDecl Function, c criteria.CallCriteria, paramVar *Variable) error {
 	var paramExpr ast.Expr
 	ast.Inspect(funcDecl.block, func(n ast.Node) bool {
 		callExpr, ok := n.(*ast.CallExpr)
@@ -250,16 +306,15 @@ func (m naiveManager) FindCallCriteria(funcDecl Function, c criteria.CallCriteri
 	return nil
 }
 
-func (m naiveManager) FindStruct(filePath string, s *Struct) error {
-	fset := token.NewFileSet()
-	f, err := m.astForFile(filePath, fset)
+func (m *cacheManager) FindStruct(filePath string, s *StructDef) error {
+	fAST, err := m.astForFile(filePath)
 	if err != nil {
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return err
 	}
 	err = ErrNotFound
 	found := false
-	ast.Inspect(f, func(n ast.Node) bool {
+	ast.Inspect(fAST.file, func(n ast.Node) bool {
 		ts, ok := n.(*ast.TypeSpec)
 		if ok {
 			st, ok := ts.Type.(*ast.StructType)
@@ -285,14 +340,29 @@ func (m naiveManager) FindStruct(filePath string, s *Struct) error {
 	return err
 }
 
-func (m naiveManager) astForFile(filePath string, fset *token.FileSet) (*ast.File, error) {
+func (m *cacheManager) astForFile(filePath string) (fileAST, error) {
 	m.logger.Printf("parsing ast from file %s\n", filePath)
-	return astForFile(filePath, fset)
+	f, ok := m.files[filePath]
+	if ok {
+		return f, nil
+	}
+	m.Lock()
+	defer m.Unlock()
+	var err error
+	f = fileAST{
+		fset: token.NewFileSet(),
+	}
+	f.file, err = astForFile(filePath, f.fset)
+	if err != nil {
+		return f, err
+	}
+	m.files[filePath] = f
+	return f, nil
 }
 
 // NewManager creates the default Manager
 func NewManager(logger *log.Logger) Manager {
-	return naiveManager{
+	return &cacheManager{
 		logger: logger,
 	}
 }
@@ -314,63 +384,62 @@ func astForReader(filePath string, r io.Reader, fset *token.FileSet) (*ast.File,
 	return parser.ParseFile(fset, filePath, src, parser.ParseComments)
 }
 
-// searchFileForRouteCriteria searches a file for routes matching some criterias
-func searchFileForRouteCriteria(filePath string, fset *token.FileSet, file *ast.File, criterias []criteria.RouteCriteria) []Route {
-	routesFound := make([]Route, 0)
-	ast.Inspect(file, func(n ast.Node) bool {
-		if n != nil {
-			switch x := n.(type) {
-			case *ast.CallExpr:
-				for i := range criterias {
-					routeCriteria := criterias[i]
-					if matchesRouteCriteria(x, routeCriteria) {
-						foundRoute := Route{
-							File: filePath,
-						}
-						callExprToRoute(fset, x, routeCriteria, &foundRoute)
-						routesFound = append(routesFound, foundRoute)
-						// if CallExpr matched one criteria, we don't want to compare it to other criterias
-						break
-					}
-				}
-			}
-		}
-		return true
-	})
-	return routesFound
-}
-
 func matchesRouteCriteria(callExpr *ast.CallExpr, routeCriteria criteria.RouteCriteria) bool {
 	id := Function{}
 	extractFunction(callExpr, &id)
-	matches := id.Name == routeCriteria.FuncName && id.Hierarchy == routeCriteria.Hierarchy
+	matches := id.Name == routeCriteria.FuncRoute.FuncName && id.Hierarchy == routeCriteria.FuncRoute.Hierarchy
 	if matches {
-		if len(routeCriteria.HTTPMethod) == 0 && !criteria.MatchesHTTPMethod(id.Name) {
+		if len(routeCriteria.FuncRoute.HTTPMethod) == 0 && !criteria.MatchesHTTPMethod(id.Name) {
 			return false
 		}
 		if callExpr.Args == nil {
 			return false
 		}
 		argsLen := len(callExpr.Args)
-		if routeCriteria.PathIndex >= argsLen || routeCriteria.HandlerIndex >= argsLen {
+		if routeCriteria.FuncRoute.PathIndex >= argsLen || routeCriteria.FuncRoute.HandlerIndex >= argsLen {
 			return false
 		}
 	}
 	return matches
 }
 
+func matchesStructRoute(com *ast.CompositeLit, routeCriteria criteria.RouteCriteria) bool {
+	v := Variable{}
+	extractVariable(com.Type, &v)
+	return routeCriteria.StructRoute.Name == v.Name && v.Hierarchy == routeCriteria.StructRoute.Hierarchy
+}
+
 func callExprToRoute(fset *token.FileSet, callExpr *ast.CallExpr, routeCriteria criteria.RouteCriteria, route *Route) {
 	fdecl := Function{}
 	extractFunction(callExpr, &fdecl)
-	if len(routeCriteria.HTTPMethod) > 0 {
-		route.HTTPMethod = routeCriteria.HTTPMethod
+	if len(routeCriteria.FuncRoute.HTTPMethod) > 0 {
+		route.HTTPMethod = routeCriteria.FuncRoute.HTTPMethod
 	} else {
 		route.HTTPMethod = criteria.MatchHTTPMethod(fdecl.Name)
 	}
-	extractVariable(callExpr.Args[routeCriteria.PathIndex], &route.Path)
-	extractFunction(callExpr.Args[routeCriteria.HandlerIndex], &route.Handler)
-	route.FuncCall = FuncCall{
+	extractVariable(callExpr.Args[routeCriteria.FuncRoute.PathIndex], &route.Path)
+	extractFunction(callExpr.Args[routeCriteria.FuncRoute.HandlerIndex], &route.Handler)
+	route.FuncCall = &FuncCall{
 		callExpr: callExpr,
+	}
+}
+
+func compositeLitToRoute(fset *token.FileSet, com *ast.CompositeLit, route *Route) {
+	v := Variable{}
+	extractVariable(com.Type, &v)
+	route.Struct = &Struct{
+		Values: make(map[string]Variable),
+	}
+	for _, e := range com.Elts {
+		kv, ok := e.(*ast.KeyValueExpr)
+		if ok {
+			ident, ok := kv.Key.(*ast.Ident)
+			if ok {
+				v := Variable{}
+				extractVariable(kv.Value, &v)
+				route.Struct.Values[ident.Name] = v
+			}
+		}
 	}
 }
 
@@ -458,6 +527,8 @@ func extractVariable(n ast.Node, v *Variable) {
 				extractVariable(o.Rhs[0], v.Definition)
 			case *ast.ValueSpec:
 				extractVariable(o.Values[0], v.Definition)
+			case *ast.Field:
+				extractVariable(o.Type, v.Definition)
 			}
 		}
 	case *ast.SelectorExpr:

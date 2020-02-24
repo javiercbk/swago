@@ -1,12 +1,11 @@
 routes:
-- pkg: packageName0
+- hierarchy: packageName0.varType0
   funcName: funcName0
-  varType: varType0
   httpMethod: get
   pathIndex: 1
   handlerIndex: 2
 - funcName: funcName1
-  varType: varType1
+  hierarchy: varType1
   httpMethod: post
   pathIndex: 1
   handlerIndex: 2

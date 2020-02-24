@@ -1,20 +1,18 @@
 request:
-- pkg: requestPackageName0
+- hierarchy: requestPackageName0.requestVarType0
   funcName: requestFuncName0
-  varType: requestVarType0
   paramIndex: 0
 - funcName: requestFuncName1
-  varType: requestVarType1
+  hierarchy: requestVarType1
   paramIndex: 1
 - funcName: requestFuncName2
   paramIndex: 2
 response:
-- pkg: responsePackageName0
+- hierarchy: responsePackageName0.responseVarType0
   funcName: responseFuncName0
-  varType: responseVarType0
   paramIndex: 0
 - funcName: responseFuncName1
-  varType: responseVarType1
+  hierarchy: responseVarType1
   paramIndex: 1
 - funcName: responseFuncName2
   paramIndex: 2

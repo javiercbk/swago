@@ -6,8 +6,6 @@ import (
 	"log"
 	"path/filepath"
 	"testing"
-
-	"github.com/javiercbk/swago/criteria"
 )
 
 const (
@@ -62,28 +60,5 @@ func TestCodeExplorerConfig(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestFindRoutes(t *testing.T) {
-	sg, err := NewSwaggerGenerator(moduleRootPath, moduleGoPath, log.New(ioutil.Discard, "", log.LstdFlags))
-	if err != nil {
-		t.Fatalf("failed to create swagger generator: %v\n", err)
-	}
-	routes, err := sg.findRoutes([]criteria.RouteCriteria{
-		criteria.RouteCriteria{
-			FuncName:   "GET",
-			PathIndex:  0,
-			Pkg:        "echo",
-			VarType:    "Echo",
-			Name:       "Group",
-			ChildRoute: &criteria.RouteCriteria{},
-		},
-	})
-	if err != nil {
-		t.Fatal("error finding routes\n")
-	}
-	if len(routes) == 0 {
-		t.Fatal("expected routes to be found but non was found\n")
 	}
 }
