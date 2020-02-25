@@ -81,7 +81,7 @@ func isHTTPMethodSelectorSwitch(selectorExpr *ast.SelectorExpr, switchVarType st
 		if ok {
 			buf := bytes.Buffer{}
 			extractHierarchy(ident, &buf)
-			hierarchy := correctHierarchy(buf.String())
+			hierarchy := buf.String()
 			if hierarchy == switchVarType {
 				return true
 			}

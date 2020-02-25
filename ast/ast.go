@@ -125,6 +125,7 @@ const (
 
 // Manager is an abstraction that can read ast for files
 type Manager interface {
+	GetPkg(filePath string) (string, error)
 	GetFileImports(filePath string) ([]FileImport, error)
 	ExtractRoutes(f *Function, routeCriterias []criteria.RouteCriteria) []Route
 	FindStructLiteral(filePath string, structRoute *criteria.StructRoute) ([]Route, error)
@@ -149,6 +150,15 @@ type cacheManager struct {
 type switchRouterHandler struct {
 	HTTPMethod string
 	RootNode   ast.Node
+}
+
+func (m *cacheManager) GetPkg(filePath string) (string, error) {
+	fAST, err := m.astForFile(filePath)
+	if err != nil {
+		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
+		return "", err
+	}
+	return filePkg(fAST.file), nil
 }
 
 func (m *cacheManager) GetFileImports(filePath string) ([]FileImport, error) {
@@ -302,11 +312,12 @@ func (m *cacheManager) FindStructLiteral(filePath string, structRoute *criteria.
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return routes, err
 	}
+	currPkg := filePkg(fAST.file)
 	ast.Inspect(fAST.file, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CompositeLit:
 			if structRoute != nil {
-				if matchesStructRoute(x, *structRoute) {
+				if matchesStructRoute(x, *structRoute, currPkg) {
 					foundRoute := Route{
 						File: filePath,
 					}
@@ -337,7 +348,12 @@ func (m *cacheManager) FindStruct(filePath string, s *StructDef) error {
 					for _, f := range st.Fields.List {
 						buf := bytes.Buffer{}
 						extractHierarchy(f.Type, &buf)
-						typeStr := correctHierarchy(buf.String())
+						typeStr := buf.String()
+						if len(typeStr) > 0 {
+							typeStr = currPkg + "." + typeStr
+						} else {
+							typeStr = currPkg
+						}
 						tag := ""
 						if f.Tag != nil {
 							tag = strings.Trim(f.Tag.Value, "`")
@@ -510,56 +526,6 @@ func extractHierarchy(n ast.Node, buf *bytes.Buffer) {
 	}
 }
 
-func oldExtractHierarchy(n ast.Node, buf *bytes.Buffer) {
-	switch x := n.(type) {
-	case *ast.StarExpr:
-		extractHierarchy(x.X, buf)
-		buf.WriteString("*")
-	case *ast.SelectorExpr:
-		extractHierarchy(x.X, buf)
-		buf.WriteString(".")
-		buf.WriteString(x.Sel.Name)
-	case *ast.Field:
-		extractHierarchy(x.Type, buf)
-	case *ast.ArrayType:
-		extractHierarchy(x.Elt, buf)
-		buf.WriteString("[]")
-	case *ast.Ident:
-		if buf.Len() > 0 {
-			buf.WriteString(".")
-		}
-		if x.Obj != nil {
-			switch f := x.Obj.Decl.(type) {
-			case *ast.Field:
-				extractHierarchy(f, buf)
-			case *ast.AssignStmt:
-				extractHierarchy(f.Rhs[0], buf)
-			case *ast.TypeSpec:
-				buf.WriteString(f.Name.Name)
-			}
-		} else {
-			buf.WriteString(x.Name)
-		}
-	case *ast.CompositeLit:
-		extractHierarchy(x.Type, buf)
-	}
-}
-
-func correctHierarchy(toCorrect string) string {
-	corrected := toCorrect
-	if strings.Contains(toCorrect, "*") {
-		parts := strings.Split(toCorrect, ".")
-		for i := range parts {
-			str := parts[i]
-			if strings.HasSuffix(str, "*") {
-				parts[i] = "*" + str[:len(str)-1]
-			}
-		}
-		corrected = strings.Join(parts, ".")
-	}
-	return corrected
-}
-
 func extractVariable(n ast.Node, v *Variable) {
 	switch x := n.(type) {
 	case *ast.Field:
@@ -574,7 +540,7 @@ func extractVariable(n ast.Node, v *Variable) {
 		} else {
 			buf := bytes.Buffer{}
 			extractHierarchy(x.Type, &buf)
-			v.Hierarchy = correctHierarchy(buf.String())
+			v.Hierarchy = buf.String()
 		}
 	case *ast.AssignStmt:
 		ident, ok := x.Lhs[0].(*ast.Ident)
@@ -582,7 +548,7 @@ func extractVariable(n ast.Node, v *Variable) {
 			v.Name = ident.Name
 			buf := bytes.Buffer{}
 			extractHierarchy(x.Rhs[0], &buf)
-			v.Hierarchy = correctHierarchy(buf.String())
+			v.Hierarchy = buf.String()
 		}
 	case *ast.Ident:
 		if isGoType(x.Name) {
@@ -605,7 +571,7 @@ func extractVariable(n ast.Node, v *Variable) {
 		v.Name = x.Sel.Name
 		buf := bytes.Buffer{}
 		extractHierarchy(x.X, &buf)
-		v.Hierarchy = correctHierarchy(buf.String())
+		v.Hierarchy = buf.String()
 	case *ast.CompositeLit:
 		extractVariable(x.Type, v)
 	case *ast.BasicLit:
@@ -709,11 +675,11 @@ func extractFunction(n ast.Node, funcDecl *Function) {
 				case *ast.Ident:
 					buf := bytes.Buffer{}
 					extractHierarchy(ft, &buf)
-					funcDecl.Hierarchy = correctHierarchy(buf.String())
+					funcDecl.Hierarchy = buf.String()
 				case *ast.StarExpr:
 					buf := bytes.Buffer{}
 					extractHierarchy(ft, &buf)
-					funcDecl.Hierarchy = correctHierarchy(buf.String())
+					funcDecl.Hierarchy = buf.String()
 				}
 			}
 		}
@@ -735,7 +701,7 @@ func extractFunction(n ast.Node, funcDecl *Function) {
 		funcDecl.Name = x.Sel.Name
 		buf := bytes.Buffer{}
 		extractHierarchy(x.X, &buf)
-		funcDecl.Hierarchy = correctHierarchy(buf.String())
+		funcDecl.Hierarchy = buf.String()
 	case *ast.Ident:
 		funcDecl.Name = x.Name
 		if x.Obj != nil {
@@ -763,4 +729,8 @@ func findFuncDeclInFile(f *ast.File, name, hierarchy string, funcDecl *ast.FuncD
 		}
 	}
 	return false
+}
+
+func filePkg(f *ast.File) string {
+	return f.Name.Name
 }

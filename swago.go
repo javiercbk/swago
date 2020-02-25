@@ -120,41 +120,6 @@ func (e *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 	return nil, nil
 }
 
-func (e *SwaggerGenerator) initStructRoute(structRoute *criteria.StructRoute) error {
-	for _, goFile := range e.projectGoFiles {
-		// FIXME: not checking package (hierarchy)
-		structDef := ast.StructDef{
-			Name: structRoute.Name,
-		}
-		err := e.astManager.FindStruct(goFile, &structDef)
-		if err == nil {
-			e.structs[structDef.Name] = structDef
-		} else if err != ast.ErrNotFound {
-			return err
-		}
-	}
-	return nil
-}
-
-func (e *SwaggerGenerator) findStructCompositeLiteral(structRoute *criteria.StructRoute) error {
-	for _, goFile := range e.projectGoFiles {
-		routesFound, err := e.astManager.FindStructLiteral(goFile, structRoute)
-		if err != nil {
-			return err
-		}
-		for _, r := range routesFound {
-			err = e.resolveRoute(structRoute, &r)
-			if err != nil {
-				e.logger.Printf("error resolving route %v: %v\n", r, err)
-				return err
-			}
-			e.routes = append(e.routes, r)
-
-		}
-	}
-	return nil
-}
-
 func (e *SwaggerGenerator) resolveRoute(structRoute *criteria.StructRoute, route *ast.Route) error {
 	for k, v := range route.Struct.Values {
 		if structRoute.PathField == k {
