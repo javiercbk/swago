@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/go-swagger/go-swagger/spec"
 	"github.com/javiercbk/swago/ast"
 	"github.com/javiercbk/swago/criteria"
 )
@@ -72,18 +73,18 @@ type SwaggerGenerator struct {
 }
 
 // GenerateSwaggerDoc generates the swagger documentation
-func (e *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria) error {
+func (e *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria) (*spec.Swagger, error) {
 	for i := range projectCriterias.Routes {
 		if projectCriterias.Routes[i].StructRoute != nil {
 			err := e.initStructRoute(projectCriterias.Routes[i].StructRoute)
 			if err != nil {
 				e.logger.Printf("error finding structs: %v\n", err)
-				return err
+				return nil, err
 			}
 			err = e.findStructCompositeLiteral(projectCriterias.Routes[i].StructRoute)
 			if err != nil {
 				e.logger.Printf("error searching for struct route: %v\n", err)
-				return err
+				return nil, err
 			}
 		}
 	}
@@ -94,12 +95,12 @@ func (e *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 			}
 			err := e.findFunction(&f)
 			if err != nil {
-				return ErrFuncNotFound
+				return nil, ErrFuncNotFound
 			}
 			err = e.breadthFirstExplore(&f, e.findRouteFactory(projectCriterias.Routes))
 			if err != nil {
 				e.logger.Printf("error finding routes: %v\n", err)
-				return err
+				return nil, err
 			}
 		}
 	}
@@ -116,7 +117,7 @@ func (e *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 		}
 
 	}
-	return nil
+	return nil, nil
 }
 
 func (e *SwaggerGenerator) initStructRoute(structRoute *criteria.StructRoute) error {

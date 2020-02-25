@@ -123,6 +123,32 @@ func TestFindStructCompositeLiteral(t *testing.T) {
 	}
 }
 
+func TestGenerateForStructProject(t *testing.T) {
+	projectPath, err := filepath.Abs(structProjectPath)
+	if err != nil {
+		t.Fatalf("error getting absolute path of %s: %v", structProjectPath, err)
+	}
+	sg, err := NewSwaggerGenerator(projectPath, projectPath, log.New(ioutil.Discard, "", log.LstdFlags))
+	if err != nil {
+		t.Fatalf("error creating a swagger generator: %v", err)
+	}
+	projectCriteria := criteria.Criteria{
+		Routes: []criteria.RouteCriteria{
+			criteria.RouteCriteria{
+				StructRoute: &criteria.StructRoute{
+					Name:            structRouteName,
+					Hierarchy:       "r",
+					PathField:       "Pattern",
+					HandlerField:    "HandlerFunc",
+					HTTPMethodField: "Method",
+				},
+			},
+		},
+	}
+	swaggerDoc, err = sg.GenerateSwaggerDoc(projectCriteria)
+	swaggerDoc.
+}
+
 func compareFields(t *testing.T, found, expected ast.Field) {
 	if found.Name != expected.Name {
 		t.Fatalf("expected name to be %s but was %s", expected.Name, found.Name)
