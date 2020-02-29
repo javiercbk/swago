@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -8,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -26,8 +28,7 @@ const (
 	// TypeKeyWord is the keyword "type"
 	TypeKeyWord string = "type"
 	// EmptyInterface is the empty interface keyword
-	EmptyInterface string = "interface{}"
-
+	EmptyInterface   string = "interface{}"
 	goTypeBool       string = "bool"
 	goTypeString     string = "string"
 	goTypeInt        string = "int"
@@ -50,7 +51,8 @@ const (
 )
 
 var (
-	defaultBlackList = []*regexp.Regexp{
+	errFileNotInPackage error = errors.New("file does not belong to the package")
+	defaultBlackList          = []*regexp.Regexp{
 		regexp.MustCompile(".*_test\\.go"),
 		regexp.MustCompile(".*" + string(os.PathSeparator) + "testdata" + string(os.PathSeparator) + ".*"),
 	}
@@ -211,9 +213,50 @@ type Pkg struct {
 	BlackList []*regexp.Regexp
 }
 
+// AnalizeProject reads a project and returns a list of packages
+func AnalizeProject(path string, logger *log.Logger) ([]*Pkg, error) {
+	return AnalizeProjectWithBlacklist(path, logger, defaultBlackList)
+}
+
+// AnalizeProjectWithBlacklist reads a project excluding some files and returns a list of packages
+func AnalizeProjectWithBlacklist(path string, logger *log.Logger, blacklist []*regexp.Regexp) ([]*Pkg, error) {
+	pkgs := make([]*Pkg, 0)
+	goFiles, err := folder.ListGoFilesRecursively(path, blacklist)
+	if err != nil {
+		return pkgs, err
+	}
+	for _, goFile := range goFiles {
+		goFilePath := filepath.Dir(goFile)
+		fset := token.NewFileSet()
+		file, err := astForFile(goFile, fset)
+		if err != nil {
+			logger.Printf("error reading ast for file %s: %v\n", goFile, err)
+			return pkgs, err
+		}
+		packageName := readFilePackage(file)
+		found := false
+		for i := range pkgs {
+			if pkgs[i].Name == packageName && pkgs[i].Path == goFilePath {
+				found = true
+				break
+			}
+		}
+		if !found {
+			pkg := &Pkg{Name: packageName, Path: goFilePath, Logger: logger, BlackList: blacklist}
+			err = pkg.Analyze()
+			if err != nil {
+				logger.Printf("error analyzing package %s in path %s: %v", packageName, goFilePath, err)
+				return pkgs, err
+			}
+			pkgs = append(pkgs, pkg)
+		}
+	}
+	return pkgs, nil
+}
+
 // NewPkgWithoutTest creates a new package with the default blacklist
-func NewPkgWithoutTest(path string, logger *log.Logger) *Pkg {
-	return &Pkg{Path: path, Logger: logger, BlackList: defaultBlackList}
+func NewPkgWithoutTest(name, path string, logger *log.Logger) *Pkg {
+	return &Pkg{Name: name, Path: path, Logger: logger, BlackList: defaultBlackList}
 }
 
 // Analyze a package
@@ -230,8 +273,10 @@ func (p *Pkg) Analyze() error {
 		}
 		err = p.analyzeFile(&f)
 		if err != nil {
-			p.Logger.Printf("error analyzing file %s: %v\n", f.Name, err)
-			return err
+			if err != errFileNotInPackage {
+				p.Logger.Printf("error analyzing file %s: %v\n", f.Name, err)
+				return err
+			}
 		}
 	}
 	return nil
@@ -251,6 +296,9 @@ func (p *Pkg) analyzeFile(file *File) error {
 	file.FSet, file.File, err = p.astForFile(file.Name)
 	if err != nil {
 		return err
+	}
+	if p.Name != readFilePackage(file.File) {
+		return errFileNotInPackage
 	}
 	// First parse imports
 	for _, d := range file.File.Decls {
@@ -356,4 +404,8 @@ func astForReader(filePath string, r io.Reader, fset *token.FileSet) (*ast.File,
 		return nil, err
 	}
 	return parser.ParseFile(fset, filePath, src, parser.ParseComments)
+}
+
+func readFilePackage(f *ast.File) string {
+	return f.Name.Name
 }

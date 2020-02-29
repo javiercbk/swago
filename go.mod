@@ -3,7 +3,6 @@ module github.com/javiercbk/swago
 go 1.13
 
 require (
-	github.com/go-swagger/go-swagger v0.22.0 // indirect
 	github.com/gorilla/mux v1.7.4 // indirect
 	github.com/labstack/echo/v4 v4.1.14 // indirect
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0 // indirect
