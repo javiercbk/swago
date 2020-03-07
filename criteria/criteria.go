@@ -70,7 +70,7 @@ type RouteCriteria struct {
 
 // CallCriteria contains all the information to match a function call with an argument
 type CallCriteria struct {
-	Hierarchy  string `yaml:"hierarchy"`
+	Pkg        string `yaml:"pkg"`
 	FuncName   string `yaml:"funcName"`
 	ParamIndex int    `yaml:"paramIndex"`
 }

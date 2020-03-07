@@ -12,13 +12,8 @@ import (
 	"strings"
 
 	"github.com/javiercbk/swago/criteria"
+	swagoErrors "github.com/javiercbk/swago/errors"
 )
-
-type notFoundErr string
-
-func (i notFoundErr) Error() string {
-	return string(i)
-}
 
 // FileImport represent the imports of a go file
 type FileImport struct {
@@ -99,28 +94,27 @@ type Struct struct {
 
 const (
 	// ErrNotFound is returned when a value was not found for an identifier
-	ErrNotFound      notFoundErr = "value not found"
-	selMethod                    = "Method"
-	selRequest                   = "Request"
-	goTypeBool                   = "bool"
-	goTypeString                 = "string"
-	goTypeInt                    = "int"
-	goTypeInt8                   = "int8"
-	goTypeInt16                  = "int16"
-	goTypeInt32                  = "int32"
-	goTypeInt64                  = "int64"
-	goTypeUint                   = "uint"
-	goTypeUint8                  = "uint8"
-	goTypeUint16                 = "uint16"
-	goTypeUint32                 = "uint32"
-	goTypeUint64                 = "uint64"
-	goTypeUintptr                = "uintptr"
-	goTypeByte                   = "byte"
-	goTypeRune                   = "rune"
-	goTypeFloat32                = "float32"
-	goTypeFloat64                = "float64"
-	goTypeComplex64              = "complex64"
-	goTypeComplex128             = "complex128"
+	selMethod        = "Method"
+	selRequest       = "Request"
+	goTypeBool       = "bool"
+	goTypeString     = "string"
+	goTypeInt        = "int"
+	goTypeInt8       = "int8"
+	goTypeInt16      = "int16"
+	goTypeInt32      = "int32"
+	goTypeInt64      = "int64"
+	goTypeUint       = "uint"
+	goTypeUint8      = "uint8"
+	goTypeUint16     = "uint16"
+	goTypeUint32     = "uint32"
+	goTypeUint64     = "uint64"
+	goTypeUintptr    = "uintptr"
+	goTypeByte       = "byte"
+	goTypeRune       = "rune"
+	goTypeFloat32    = "float32"
+	goTypeFloat64    = "float64"
+	goTypeComplex64  = "complex64"
+	goTypeComplex128 = "complex128"
 )
 
 // Manager is an abstraction that can read ast for files
@@ -250,7 +244,7 @@ func (m *cacheManager) FindValue(filePath string, v *Variable) error {
 			}
 		}
 	}
-	return ErrNotFound
+	return swagoErrors.ErrNotFound
 }
 
 func (m *cacheManager) FindFuncDeclaration(filePath string, decl *Function) error {
@@ -259,7 +253,7 @@ func (m *cacheManager) FindFuncDeclaration(filePath string, decl *Function) erro
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return err
 	}
-	err = ErrNotFound
+	err = swagoErrors.ErrNotFound
 	for _, d := range fAST.file.Decls {
 		funcDecl, ok := d.(*ast.FuncDecl)
 		if ok {
@@ -297,10 +291,10 @@ func (m *cacheManager) FindCallCriteria(funcDecl Function, c criteria.CallCriter
 	if paramExpr != nil {
 		extractVariable(paramExpr, paramVar)
 		if len(paramVar.Name) == 0 {
-			return ErrNotFound
+			return swagoErrors.ErrNotFound
 		}
 	} else {
-		return ErrNotFound
+		return swagoErrors.ErrNotFound
 	}
 	return nil
 }
@@ -336,7 +330,7 @@ func (m *cacheManager) FindStruct(filePath string, s *StructDef, currPkg string)
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return err
 	}
-	err = ErrNotFound
+	err = swagoErrors.ErrNotFound
 	found := false
 	ast.Inspect(fAST.file, func(n ast.Node) bool {
 		ts, ok := n.(*ast.TypeSpec)

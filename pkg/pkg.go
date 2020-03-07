@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/javiercbk/swago/criteria"
+	swagoErrors "github.com/javiercbk/swago/errors"
 
 	"github.com/javiercbk/swago/folder"
 )
@@ -112,6 +113,17 @@ func (file *File) SearchForStructRoutes(structRoute criteria.StructRoute) []Rout
 	return routes
 }
 
+// FindFunc find a function in a file
+func (file *File) FindFunc(funName string, fun *Function) error {
+	for _, funcInFile := range file.Functions {
+		if funcInFile.Name == funName {
+			*fun = funcInFile
+			return nil
+		}
+	}
+	return swagoErrors.ErrNotFound
+}
+
 func (file *File) extractType(genDecl *ast.GenDecl) {
 	x := genDecl.Specs[0].(*ast.TypeSpec)
 	st, ok := x.Type.(*ast.StructType)
@@ -174,7 +186,10 @@ func (file *File) compositeLitToRoute(com *ast.CompositeLit, route *Route, struc
 	}
 }
 
-func (file *File) extractFunction(x *ast.FuncDecl, f *Function) {
+func (file *File) extractFunction(x *ast.FuncDecl) {
+	f := Function{
+		File: file,
+	}
 	f.Name = x.Name.Name
 	if x.Recv != nil && x.Recv.List != nil {
 		if len(x.Recv.List) > 0 {
@@ -204,6 +219,7 @@ func (file *File) extractFunction(x *ast.FuncDecl, f *Function) {
 			f.Return = append(f.Return, flattenType(r.Type, file.Pkg.Name, file.importMappings))
 		}
 	}
+	file.Functions = append(file.Functions, f)
 }
 
 // Pkg is a package
@@ -295,6 +311,19 @@ func (p *Pkg) SearchForStructRoutes(structRoute criteria.StructRoute) []Route {
 	return routes
 }
 
+// FindFunc attempts to find a function in every file of the package
+func (p *Pkg) FindFunc(funcName string, fun *Function) error {
+	for _, f := range p.Files {
+		err := f.FindFunc(funcName, fun)
+		if err == nil {
+			return nil
+		} else if err != swagoErrors.ErrNotFound {
+			return err
+		}
+	}
+	return swagoErrors.ErrNotFound
+}
+
 func (p *Pkg) analyzeFile(file *File) error {
 	var err error
 	file.FSet, file.File, err = p.astForFile(file.Name)
@@ -327,8 +356,7 @@ func (p *Pkg) analyzeFile(file *File) error {
 				file.extractType(x)
 			}
 		case *ast.FuncDecl:
-			f := Function{}
-			file.extractFunction(x, &f)
+			file.extractFunction(x)
 		}
 	}
 	return nil

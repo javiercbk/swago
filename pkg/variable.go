@@ -192,6 +192,11 @@ func rawFlattenType(n ast.Node, importMappings map[string]string) string {
 			return mapped
 		}
 		return x.Name
+	case *ast.UnaryExpr:
+		if x.Op == token.AND {
+			return "*" + rawFlattenType(x.X, importMappings)
+		}
+		return rawFlattenType(x.X, importMappings)
 	case *ast.SelectorExpr:
 		return rawFlattenType(x.X, importMappings) + "." + x.Sel.Name
 	case *ast.CompositeLit:
@@ -199,4 +204,13 @@ func rawFlattenType(n ast.Node, importMappings map[string]string) string {
 	default:
 		return ""
 	}
+}
+
+// TypeParts returns the package and the name of a flattened type
+func TypeParts(selector string) (string, string) {
+	parts := strings.Split(selector, ".")
+	if len(parts) > 1 {
+		return parts[0], parts[1]
+	}
+	return "", selector
 }

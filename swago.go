@@ -9,21 +9,14 @@ import (
 	"strings"
 
 	"github.com/javiercbk/swago/criteria"
+	swagoErrors "github.com/javiercbk/swago/errors"
 	"github.com/javiercbk/swago/pkg"
 )
 
 type modelType string
 
-type generatorErr string
-
-func (m generatorErr) Error() string {
-	return string(m)
-}
-
 const (
 	modFile = "go.mod"
-	// ErrMainNotFound is returned when a main function is not found
-	ErrFuncNotFound generatorErr = "starting point not found"
 )
 
 var (
@@ -53,12 +46,14 @@ func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 	}
 	for i := range s.routes {
 		if len(s.routes[i].HandlerType) > 0 {
-			parts := strings.Split(s.routes[i].HandlerType, ".")
-			if len(parts) > 1 {
-				pkg := parts[0]
-				funcName := parts[1]
+			pkg, funcName := selectorInfo(s.routes[i].HandlerType)
+			for _, rc := range projectCriterias.Request {
+				requestModel := pkg.Struct{}
+				err := s.findModelInFunc(pkg, funcName, rc, &requestModel)
+				if err != nil && err != swagoErrors.ErrNotFound {
+					return err
+				}
 			}
-			s.findRequestModelInFunc()
 		}
 	}
 	return nil
@@ -71,6 +66,28 @@ func (s *SwaggerGenerator) findStructRoutes(structRoute criteria.StructRoute) []
 		s.routes = append(s.routes, foundRoutes...)
 	}
 	return s.routes
+}
+
+func (s *SwaggerGenerator) findModelInFunc(pkgName, funcName string, rc criteria.CallCriteria, requestModel *pkg.Struct) error {
+	pkg := s.getPkg(pkgName)
+	if pkg == nil {
+		return swagoErrors.ErrNotFound
+	}
+	fun := pkg.Function{}
+	err := pkg.FindFunc(funcName, &fun)
+	if err != nil {
+		return err
+	}
+	fun.
+}
+
+func (s *SwaggerGenerator) getPkg(name string) *pkg.Pkg {
+	for _, p := range s.Pkgs {
+		if p.Name == name {
+			return p
+		}
+	}
+	return nil
 }
 
 // NewSwaggerGeneratorWithBlacklist creates a swagger generator that scans a whole project except for any matching a given blacklist
@@ -104,7 +121,7 @@ func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, logger *log.Logge
 		if strings.HasPrefix(line, "module") {
 			moduleName = line[7:]
 			break
-		}
+		} 
 	}
 	if err := scanner.Err(); err != nil {
 		logger.Printf("error reading file %s: %v\n", goModFilePath, err)
