@@ -134,7 +134,7 @@ type Manager interface {
 	FindFuncDeclaration(filePath string, funcDecl *Function) error
 	// FindCallsInFunc(funcDecl FuncDecl) []FuncCall
 	FindCallCriteria(funcDecl Function, c criteria.CallCriteria, paramIdentifier *Variable) error
-	FindStruct(filePath string, s *StructDef) error
+	FindStruct(filePath string, s *StructDef, currPkg string) error
 }
 
 type fileAST struct {
@@ -312,12 +312,11 @@ func (m *cacheManager) FindStructLiteral(filePath string, structRoute *criteria.
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
 		return routes, err
 	}
-	currPkg := filePkg(fAST.file)
 	ast.Inspect(fAST.file, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CompositeLit:
 			if structRoute != nil {
-				if matchesStructRoute(x, *structRoute, currPkg) {
+				if matchesStructRoute(x, *structRoute) {
 					foundRoute := Route{
 						File: filePath,
 					}
@@ -331,7 +330,7 @@ func (m *cacheManager) FindStructLiteral(filePath string, structRoute *criteria.
 	return routes, nil
 }
 
-func (m *cacheManager) FindStruct(filePath string, s *StructDef) error {
+func (m *cacheManager) FindStruct(filePath string, s *StructDef, currPkg string) error {
 	fAST, err := m.astForFile(filePath)
 	if err != nil {
 		m.logger.Printf("error parsing ast from file %s: %v\n", filePath, err)
@@ -441,7 +440,7 @@ func matchesRouteCriteria(callExpr *ast.CallExpr, routeCriteria criteria.RouteCr
 func matchesStructRoute(com *ast.CompositeLit, structRoute criteria.StructRoute) bool {
 	v := Variable{}
 	extractVariable(com.Type, &v)
-	return structRoute.Name == v.Name && v.Hierarchy == structRoute.Hierarchy
+	return structRoute.Name == v.Name && v.Hierarchy == structRoute.Pkg
 }
 
 func callExprToRoute(fset *token.FileSet, callExpr *ast.CallExpr, routeCriteria criteria.RouteCriteria, route *Route) {

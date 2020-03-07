@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -99,6 +100,7 @@ func (file *File) SearchForStructRoutes(structRoute criteria.StructRoute) []Rout
 		case *ast.CompositeLit:
 			if file.matchesStructRoute(x, structRoute) {
 				foundRoute := Route{
+					Pkg:  file.Pkg.Name,
 					File: file.Name,
 				}
 				file.compositeLitToRoute(x, &foundRoute, structRoute)
@@ -138,7 +140,7 @@ func (file *File) extractType(genDecl *ast.GenDecl) {
 
 func (file *File) matchesStructRoute(com *ast.CompositeLit, structRoute criteria.StructRoute) bool {
 	flattenedType := flattenType(com, file.Pkg.Name, file.importMappings)
-	return flattenedType == structRoute.Name
+	return flattenedType == structRoute.Pkg+"."+structRoute.Name
 }
 
 func (file *File) compositeLitToRoute(com *ast.CompositeLit, route *Route, structRoute criteria.StructRoute) {
@@ -149,12 +151,12 @@ func (file *File) compositeLitToRoute(com *ast.CompositeLit, route *Route, struc
 			ident, ok := kv.Key.(*ast.Ident)
 			if ok {
 				v := &Variable{}
-				v.Extract(com)
+				v.Extract(kv.Value)
 				var val string
 				if len(v.StrValue) > 0 {
 					val = v.StrValue
 				} else {
-					flattenedType := flattenType(com, file.Pkg.Name, file.importMappings)
+					flattenedType := flattenType(kv.Value, file.Pkg.Name, file.importMappings)
 					val = flattenedType
 				}
 				route.Struct[ident.Name] = val
@@ -261,6 +263,7 @@ func NewPkgWithoutTest(name, path string, logger *log.Logger) *Pkg {
 
 // Analyze a package
 func (p *Pkg) Analyze() error {
+	p.Files = make([]File, 0)
 	goFiles, err := folder.ListGoFiles(p.Path, p.BlackList)
 	if err != nil {
 		p.Logger.Printf("error listing go files for path %s: %v\n", p.Path, err)
@@ -269,7 +272,7 @@ func (p *Pkg) Analyze() error {
 	for _, goFile := range goFiles {
 		f := File{
 			Pkg:  p,
-			Name: goFile,
+			Name: path.Join(p.Path, goFile),
 		}
 		err = p.analyzeFile(&f)
 		if err != nil {
@@ -278,6 +281,7 @@ func (p *Pkg) Analyze() error {
 				return err
 			}
 		}
+		p.Files = append(p.Files, f)
 	}
 	return nil
 }
@@ -353,6 +357,7 @@ func extractImport(file *File, genDecl *ast.GenDecl) {
 			file.Imports = append(file.Imports, imp)
 		}
 	}
+	generateImportMappings(file)
 }
 
 func extractValueSpec(file *File, genDecl *ast.GenDecl, isConst bool) {
@@ -381,7 +386,7 @@ func generateImportMappings(f *File) {
 			splitted := strings.Split(i.Pkg, "/")
 			packageName := splitted[len(splitted)-1]
 			if len(i.Name) > 0 {
-				f.importMappings[packageName] = i.Name
+				f.importMappings[i.Name] = packageName
 			} else {
 				f.importMappings[packageName] = packageName
 			}

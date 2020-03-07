@@ -51,22 +51,31 @@ func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 			s.findStructRoutes(*r.StructRoute)
 		}
 	}
+	for i := range s.routes {
+		if len(s.routes[i].HandlerType) > 0 {
+			parts := strings.Split(s.routes[i].HandlerType, ".")
+			if len(parts) > 1 {
+				pkg := parts[0]
+				funcName := parts[1]
+			}
+			s.findRequestModelInFunc()
+		}
+	}
 	return nil
 }
 
 func (s *SwaggerGenerator) findStructRoutes(structRoute criteria.StructRoute) []pkg.Route {
-	routes := make([]pkg.Route, 0)
+	s.routes = make([]pkg.Route, 0)
 	for _, p := range s.Pkgs {
 		foundRoutes := p.SearchForStructRoutes(structRoute)
-		routes = append(routes, foundRoutes...)
+		s.routes = append(s.routes, foundRoutes...)
 	}
-	return routes
+	return s.routes
 }
 
-// NewSwaggerGenerator creates a swagger generator that scans a whole project
-func NewSwaggerGenerator(rootPath, goPath string, logger *log.Logger) (*SwaggerGenerator, error) {
+// NewSwaggerGeneratorWithBlacklist creates a swagger generator that scans a whole project except for any matching a given blacklist
+func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, logger *log.Logger, blacklist []*regexp.Regexp) (*SwaggerGenerator, error) {
 	var err error
-	blacklist := defaultBlacklist
 	generator := &SwaggerGenerator{
 		RootPath:  rootPath,
 		GoPath:    goPath,
@@ -102,6 +111,11 @@ func NewSwaggerGenerator(rootPath, goPath string, logger *log.Logger) (*SwaggerG
 		return generator, err
 	}
 	generator.ModuleName = moduleName
-	generator.Pkgs, err = pkg.AnalizeProject(rootPath, logger)
+	generator.Pkgs, err = pkg.AnalizeProjectWithBlacklist(rootPath, logger, blacklist)
 	return generator, err
+}
+
+// NewSwaggerGenerator creates a swagger generator that scans a whole project
+func NewSwaggerGenerator(rootPath, goPath string, logger *log.Logger) (*SwaggerGenerator, error) {
+	return NewSwaggerGeneratorWithBlacklist(rootPath, goPath, logger, defaultBlacklist)
 }

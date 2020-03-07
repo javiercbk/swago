@@ -56,7 +56,7 @@ type FuncRoute struct {
 // StructRoute matches a route that is defined as a struct
 type StructRoute struct {
 	Name            string `yaml:"name"`
-	Hierarchy       string `yaml:"hierarchy"`
+	Pkg             string `yaml:"pkg"`
 	PathField       string `yaml:"pathField"`
 	HandlerField    string `yaml:"handlerField"`
 	HTTPMethodField string `yaml:"httpMethodField"`

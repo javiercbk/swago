@@ -79,7 +79,12 @@ func (e *variableHelper) assign(n ast.Node, v *Variable) {
 			if len(x.Elts) > 0 {
 				switch x.Elts[0].(type) {
 				case *ast.CompositeLit:
-					e.assign(x, v)
+					// slice
+					arrTypeVar := &Variable{}
+					// arrTypeVar.Extract(x.Elts)
+					lastVar.ArrayValue = &Array{
+						Type: *arrTypeVar,
+					}
 				case *ast.KeyValueExpr:
 					lastVar.MapValue = make(map[string]*Variable)
 					for _, el := range x.Elts {
@@ -105,6 +110,8 @@ func (e *variableHelper) extract(n ast.Node, v *Variable) {
 		e.extract(x.X, v)
 		levelV := e.getLevel(v)
 		levelV.Name = x.Sel.Name
+	case *ast.BasicLit:
+		e.assign(n, v)
 	}
 }
 
@@ -187,6 +194,8 @@ func rawFlattenType(n ast.Node, importMappings map[string]string) string {
 		return x.Name
 	case *ast.SelectorExpr:
 		return rawFlattenType(x.X, importMappings) + "." + x.Sel.Name
+	case *ast.CompositeLit:
+		return rawFlattenType(x.Type, importMappings)
 	default:
 		return ""
 	}
