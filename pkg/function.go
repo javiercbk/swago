@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"go/ast"
+	"go/token"
 
 	"github.com/javiercbk/swago/criteria"
 	swagoErrors "github.com/javiercbk/swago/errors"
@@ -18,8 +19,8 @@ type Function struct {
 	callExpr *ast.CallExpr
 }
 
-// ListVariableNames returns a list of all the variables names in this function
-func (f Function) ListVariableNames() []Variable {
+// ListVariablesUntil returns a list of all the variables until a position
+func (f Function) ListVariablesUntil(until token.Pos) []Variable {
 	vars := make([]Variable, 0)
 	for _, a := range f.Args {
 		vars = append(vars, a)
@@ -28,10 +29,12 @@ func (f Function) ListVariableNames() []Variable {
 		if n != nil {
 			switch x := n.(type) {
 			case *ast.AssignStmt:
-				for _, l := range x.Lhs {
-					v := &Variable{}
-					v.Extract(l)
-					vars = append(vars, *v)
+				if x.Pos() < until {
+					for _, l := range x.Lhs {
+						v := &Variable{}
+						v.Extract(l)
+						vars = append(vars, *v)
+					}
 				}
 				return false
 			default:
@@ -47,16 +50,16 @@ func (f Function) ListVariableNames() []Variable {
 func (f Function) FindArgTypeCallExpression(callCriteria criteria.CallCriteria) (string, error) {
 	var foundArg ast.Expr
 	var structType string
-	found := false
+	var foundAt token.Pos = -1
 	ast.Inspect(f.block, func(n ast.Node) bool {
 		if n != nil {
 			switch x := n.(type) {
 			case *ast.CallExpr:
 				fullName := flattenType(x.Fun, f.File.Pkg.Name, f.File.importMappings)
 				pkg, name := TypeParts(fullName)
-				if !found && pkg == callCriteria.Pkg && name == callCriteria.FuncName && len(x.Args) > callCriteria.ParamIndex {
+				if foundAt == -1 && pkg == callCriteria.Pkg && name == callCriteria.FuncName && len(x.Args) > callCriteria.ParamIndex {
 					foundArg = x.Args[callCriteria.ParamIndex]
-					found = true
+					foundAt = x.Pos()
 				}
 				return false
 			default:
@@ -65,8 +68,15 @@ func (f Function) FindArgTypeCallExpression(callCriteria criteria.CallCriteria) 
 		}
 		return true
 	})
-	if !found {
+	if foundAt == -1 {
 		return structType, swagoErrors.ErrNotFound
 	}
-	return flattenType(foundArg, f.File.Pkg.Name, f.File.importMappings), nil
+	varName := flattenType(foundArg, f.File.Pkg.Name, f.File.importMappings)
+	variables := f.ListVariablesUntil(foundAt)
+	for _, v := range variables {
+		if v.Name == varName {
+			return v.GoType, nil
+		}
+	}
+	return "", swagoErrors.ErrNotFound
 }

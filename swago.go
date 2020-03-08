@@ -46,10 +46,10 @@ func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 	}
 	for i := range s.routes {
 		if len(s.routes[i].HandlerType) > 0 {
-			pkg, funcName := selectorInfo(s.routes[i].HandlerType)
+			pkgName, funcName := pkg.TypeParts(s.routes[i].HandlerType)
 			for _, rc := range projectCriterias.Request {
 				requestModel := pkg.Struct{}
-				err := s.findModelInFunc(pkg, funcName, rc, &requestModel)
+				err := s.findModelInFunc(pkgName, funcName, rc, &requestModel)
 				if err != nil && err != swagoErrors.ErrNotFound {
 					return err
 				}
@@ -69,16 +69,23 @@ func (s *SwaggerGenerator) findStructRoutes(structRoute criteria.StructRoute) []
 }
 
 func (s *SwaggerGenerator) findModelInFunc(pkgName, funcName string, rc criteria.CallCriteria, requestModel *pkg.Struct) error {
-	pkg := s.getPkg(pkgName)
-	if pkg == nil {
+	pkgFound := s.getPkg(pkgName)
+	if pkgFound == nil {
 		return swagoErrors.ErrNotFound
 	}
 	fun := pkg.Function{}
-	err := pkg.FindFunc(funcName, &fun)
+	err := pkgFound.FindFunc(funcName, &fun)
 	if err != nil {
 		return err
 	}
-	fun.
+	varType, err := fun.FindArgTypeCallExpression(rc)
+	if err != nil {
+		return err
+	}
+	pkgName, structName := pkg.TypeParts(varType)
+	requestModel.Pkg = pkgName
+	requestModel.Name = structName
+	return err
 }
 
 func (s *SwaggerGenerator) getPkg(name string) *pkg.Pkg {
@@ -121,7 +128,7 @@ func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, logger *log.Logge
 		if strings.HasPrefix(line, "module") {
 			moduleName = line[7:]
 			break
-		} 
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		logger.Printf("error reading file %s: %v\n", goModFilePath, err)

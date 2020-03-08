@@ -32,14 +32,14 @@ type Variable struct {
 
 // Function is a function
 type Function struct {
-	File      string
-	Hierarchy string
-	Name      string
-	Args      []Variable
-	Return    []Variable
-	fAST      fileAST
-	block     *ast.BlockStmt
-	callExpr  *ast.CallExpr
+	File     string
+	Pkg      string
+	Name     string
+	Args     []Variable
+	Return   []Variable
+	fAST     fileAST
+	block    *ast.BlockStmt
+	callExpr *ast.CallExpr
 }
 
 // FuncCall is a function call
@@ -262,7 +262,7 @@ func (m *cacheManager) FindFuncDeclaration(filePath string, decl *Function) erro
 				fAST: fAST,
 			}
 			extractFunction(d, &fdecl)
-			if fdecl.Name == decl.Name && fdecl.Hierarchy == decl.Hierarchy {
+			if fdecl.Name == decl.Name && fdecl.Pkg == decl.Pkg {
 				// TODO: think if it should check the arguments and the return type
 				decl.block = funcDecl.Body
 				err = nil
@@ -280,7 +280,7 @@ func (m *cacheManager) FindCallCriteria(funcDecl Function, c criteria.CallCriter
 		if ok {
 			fDecl := Function{}
 			extractFunction(callExpr, &fDecl)
-			if fDecl.Name == c.FuncName && fDecl.Hierarchy == c.Hierarchy {
+			if fDecl.Name == c.FuncName && fDecl.Pkg == c.Pkg {
 				if len(callExpr.Args) > c.ParamIndex {
 					paramExpr = callExpr.Args[c.ParamIndex]
 				}
@@ -415,7 +415,7 @@ func astForReader(filePath string, r io.Reader, fset *token.FileSet) (*ast.File,
 func matchesRouteCriteria(callExpr *ast.CallExpr, routeCriteria criteria.RouteCriteria) bool {
 	id := Function{}
 	extractFunction(callExpr, &id)
-	matches := id.Name == routeCriteria.FuncRoute.FuncName && id.Hierarchy == routeCriteria.FuncRoute.Hierarchy
+	matches := id.Name == routeCriteria.FuncRoute.FuncName && id.Pkg == routeCriteria.FuncRoute.Pkg
 	if matches {
 		if len(routeCriteria.FuncRoute.HTTPMethod) == 0 && !criteria.MatchesHTTPMethod(id.Name) {
 			return false
@@ -668,11 +668,11 @@ func extractFunction(n ast.Node, funcDecl *Function) {
 				case *ast.Ident:
 					buf := bytes.Buffer{}
 					extractHierarchy(ft, &buf)
-					funcDecl.Hierarchy = buf.String()
+					funcDecl.Pkg = buf.String()
 				case *ast.StarExpr:
 					buf := bytes.Buffer{}
 					extractHierarchy(ft, &buf)
-					funcDecl.Hierarchy = buf.String()
+					funcDecl.Pkg = buf.String()
 				}
 			}
 		}
@@ -694,7 +694,7 @@ func extractFunction(n ast.Node, funcDecl *Function) {
 		funcDecl.Name = x.Sel.Name
 		buf := bytes.Buffer{}
 		extractHierarchy(x.X, &buf)
-		funcDecl.Hierarchy = buf.String()
+		funcDecl.Pkg = buf.String()
 	case *ast.Ident:
 		funcDecl.Name = x.Name
 		if x.Obj != nil {
@@ -709,13 +709,13 @@ func extractFunction(n ast.Node, funcDecl *Function) {
 	}
 }
 
-func findFuncDeclInFile(f *ast.File, name, hierarchy string, funcDecl *ast.FuncDecl) bool {
+func findFuncDeclInFile(f *ast.File, name, pkg string, funcDecl *ast.FuncDecl) bool {
 	for i := range f.Decls {
 		decl, ok := f.Decls[i].(*ast.FuncDecl)
 		if ok {
 			f := Function{}
 			extractFunction(decl, &f)
-			if f.Name == name && f.Hierarchy == hierarchy {
+			if f.Name == name && f.Pkg == pkg {
 				funcDecl = decl
 				return true
 			}

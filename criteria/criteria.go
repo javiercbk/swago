@@ -46,7 +46,7 @@ type Criteria struct {
 // FuncRoute matches a route that is defined as a function call
 type FuncRoute struct {
 	FuncName     string     `yaml:"funcName"`
-	Hierarchy    string     `yaml:"hierarchy"`
+	Pkg          string     `yaml:"pkg"`
 	HTTPMethod   string     `yaml:"httpMethod"`
 	PathIndex    int        `yaml:"pathIndex"`
 	HandlerIndex int        `yaml:"handlerIndex"`

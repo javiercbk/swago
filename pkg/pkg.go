@@ -75,6 +75,7 @@ type Field struct {
 
 // Struct is a struct
 type Struct struct {
+	Pkg    string
 	Name   string
 	Fields []Field
 }
