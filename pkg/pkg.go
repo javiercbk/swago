@@ -189,9 +189,10 @@ func (file *File) compositeLitToRoute(com *ast.CompositeLit, route *Route, struc
 
 func (file *File) extractFunction(x *ast.FuncDecl) {
 	f := Function{
-		File: file,
+		File:  file,
+		Name:  x.Name.Name,
+		block: x.Body,
 	}
-	f.Name = x.Name.Name
 	if x.Recv != nil && x.Recv.List != nil {
 		if len(x.Recv.List) > 0 {
 			switch ft := x.Recv.List[0].Type.(type) {

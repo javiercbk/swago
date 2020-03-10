@@ -145,6 +145,20 @@ func TestGenerateForStructProject(t *testing.T) {
 				},
 			},
 		},
+		Request: []criteria.CallCriteria{
+			criteria.CallCriteria{
+				FuncName:   "DecodeJsonRequest",
+				Pkg:        "api",
+				ParamIndex: 1,
+			},
+		},
+		Response: []criteria.CallCriteria{
+			criteria.CallCriteria{
+				FuncName:   "SendJSONResponse",
+				Pkg:        "api",
+				ParamIndex: 2,
+			},
+		},
 	}
 	err = sg.GenerateSwaggerDoc(projectCriteria)
 	if err != nil {

@@ -30,10 +30,21 @@ func (f Function) ListVariablesUntil(until token.Pos) []Variable {
 			switch x := n.(type) {
 			case *ast.AssignStmt:
 				if x.Pos() < until {
+					varsInAssignment := make([]Variable, 0)
 					for _, l := range x.Lhs {
 						v := &Variable{}
-						v.Extract(l)
-						vars = append(vars, *v)
+						ident, ok := l.(*ast.Ident)
+						if ok {
+							v.Name = ident.Name
+							varsInAssignment = append(varsInAssignment, *v)
+						}
+					}
+					if len(varsInAssignment) > 0 {
+						switch r := x.Rhs[0].(type) {
+						case *ast.CompositeLit:
+							varsInAssignment[0].GoType = flattenType(r.Type, f.File.Pkg.Name, f.File.importMappings)
+						}
+						vars = append(vars, varsInAssignment...)
 					}
 				}
 				return false
@@ -71,6 +82,7 @@ func (f Function) FindArgTypeCallExpression(callCriteria criteria.CallCriteria) 
 	if foundAt == -1 {
 		return structType, swagoErrors.ErrNotFound
 	}
+
 	varName := flattenType(foundArg, f.File.Pkg.Name, f.File.importMappings)
 	variables := f.ListVariablesUntil(foundAt)
 	for _, v := range variables {
