@@ -115,6 +115,7 @@ const (
 	goTypeFloat64    = "float64"
 	goTypeComplex64  = "complex64"
 	goTypeComplex128 = "complex128"
+	goTypeTime       = "time.Time"
 )
 
 // Manager is an abstraction that can read ast for files

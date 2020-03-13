@@ -30,26 +30,29 @@ const (
 	// TypeKeyWord is the keyword "type"
 	TypeKeyWord string = "type"
 	// EmptyInterface is the empty interface keyword
-	EmptyInterface   string = "interface{}"
-	goTypeBool       string = "bool"
-	goTypeString     string = "string"
-	goTypeInt        string = "int"
-	goTypeInt8       string = "int8"
-	goTypeInt16      string = "int16"
-	goTypeInt32      string = "int32"
-	goTypeInt64      string = "int64"
-	goTypeUint       string = "uint"
-	goTypeUint8      string = "uint8"
-	goTypeUint16     string = "uint16"
-	goTypeUint32     string = "uint32"
-	goTypeUint64     string = "uint64"
-	goTypeUintptr    string = "uintptr"
-	goTypeByte       string = "byte"
-	goTypeRune       string = "rune"
-	goTypeFloat32    string = "float32"
-	goTypeFloat64    string = "float64"
-	goTypeComplex64  string = "complex64"
-	goTypeComplex128 string = "complex128"
+	EmptyInterface    = "interface{}"
+	goTypeBool        = "bool"
+	goTypeString      = "string"
+	goTypeInt         = "int"
+	goTypeInt8        = "int8"
+	goTypeInt16       = "int16"
+	goTypeInt32       = "int32"
+	goTypeInt64       = "int64"
+	goTypeUint        = "uint"
+	goTypeUint8       = "uint8"
+	goTypeUint16      = "uint16"
+	goTypeUint32      = "uint32"
+	goTypeUint64      = "uint64"
+	goTypeUintptr     = "uintptr"
+	goTypeByte        = "byte"
+	goTypeRune        = "rune"
+	goTypeFloat32     = "float32"
+	goTypeFloat64     = "float64"
+	goTypeComplex64   = "complex64"
+	goTypeComplex128  = "complex128"
+	goTypeTime        = "time.Time"
+	definitionPrefix  = "#/definitions/"
+	swaggerObjectType = "object"
 )
 
 var (
@@ -64,20 +67,6 @@ var (
 type Import struct {
 	Name string
 	Pkg  string
-}
-
-// Field is a struct field
-type Field struct {
-	Name string
-	Type string
-	Tag  string
-}
-
-// Struct is a struct
-type Struct struct {
-	Pkg    string
-	Name   string
-	Fields []Field
 }
 
 // File is a go file
@@ -115,9 +104,9 @@ func (file *File) SearchForStructRoutes(structRoute criteria.StructRoute) []Rout
 }
 
 // FindFunc find a function in a file
-func (file *File) FindFunc(funName string, fun *Function) error {
+func (file *File) FindFunc(fun *Function) error {
 	for _, funcInFile := range file.Functions {
-		if funcInFile.Name == funName {
+		if funcInFile.Name == fun.Name {
 			*fun = funcInFile
 			return nil
 		}
@@ -125,29 +114,42 @@ func (file *File) FindFunc(funName string, fun *Function) error {
 	return swagoErrors.ErrNotFound
 }
 
+// FindStruct find a struct in a file
+func (file *File) FindStruct(str *Struct) error {
+	for _, s := range file.Structs {
+		if s.Name == str.Name {
+			*str = s
+			return nil
+		}
+	}
+	return swagoErrors.ErrNotFound
+}
+
 func (file *File) extractType(genDecl *ast.GenDecl) {
-	x := genDecl.Specs[0].(*ast.TypeSpec)
-	st, ok := x.Type.(*ast.StructType)
-	if ok {
-		s := Struct{
-			Name:   x.Name.Name,
-			Fields: make([]Field, 0),
-		}
-		for _, f := range st.Fields.List {
-			typeStr := flattenType(f.Type, file.Pkg.Name, file.importMappings)
-			tag := ""
-			if f.Tag != nil {
-				tag = strings.Trim(f.Tag.Value, "`")
-				tag = strings.ReplaceAll(tag, "\\\"", "\"")
+	for _, spec := range genDecl.Specs {
+		x := spec.(*ast.TypeSpec)
+		st, ok := x.Type.(*ast.StructType)
+		if ok {
+			s := Struct{
+				Name:   x.Name.Name,
+				Fields: make([]Field, 0),
 			}
-			newField := Field{
-				Tag:  tag,
-				Name: f.Names[0].Name,
-				Type: typeStr,
+			for _, f := range st.Fields.List {
+				typeStr := flattenType(f.Type, file.Pkg.Name, file.importMappings)
+				tag := ""
+				if f.Tag != nil {
+					tag = strings.Trim(f.Tag.Value, "`")
+					tag = strings.ReplaceAll(tag, "\\\"", "\"")
+				}
+				newField := Field{
+					Tag:  tag,
+					Name: f.Names[0].Name,
+					Type: typeStr,
+				}
+				s.Fields = append(s.Fields, newField)
 			}
-			s.Fields = append(s.Fields, newField)
+			file.Structs = append(file.Structs, s)
 		}
-		file.Structs = append(file.Structs, s)
 	}
 }
 
@@ -224,15 +226,6 @@ func (file *File) extractFunction(x *ast.FuncDecl) {
 	file.Functions = append(file.Functions, f)
 }
 
-// Pkg is a package
-type Pkg struct {
-	Name      string
-	Path      string
-	Files     []File
-	Logger    *log.Logger
-	BlackList []*regexp.Regexp
-}
-
 // AnalizeProject reads a project and returns a list of packages
 func AnalizeProject(path string, logger *log.Logger) ([]*Pkg, error) {
 	return AnalizeProjectWithBlacklist(path, logger, defaultBlackList)
@@ -279,6 +272,59 @@ func NewPkgWithoutTest(name, path string, logger *log.Logger) *Pkg {
 	return &Pkg{Name: name, Path: path, Logger: logger, BlackList: defaultBlackList}
 }
 
+// Project is a golang project
+type Project struct {
+	RootPath  string
+	Blacklist []*regexp.Regexp
+	Pkgs      []*Pkg
+}
+
+// SearchForStructRoutes searches for struct routes
+func (p *Project) SearchForStructRoutes(structRoute criteria.StructRoute) []Route {
+	routes := make([]Route, 0)
+	for _, p := range p.Pkgs {
+		routes = append(routes, p.SearchForStructRoutes(structRoute)...)
+	}
+	return routes
+}
+
+// FindFunc attempts to find a function in every file of the package
+func (p *Project) FindFunc(fun *Function) error {
+	for _, p := range p.Pkgs {
+		err := p.FindFunc(fun)
+		if err == nil {
+			return nil
+		} else if err != swagoErrors.ErrNotFound {
+			return err
+		}
+	}
+	return swagoErrors.ErrNotFound
+}
+
+// FindStruct find a struct in a package
+func (p *Project) FindStruct(str *Struct) error {
+	for _, p := range p.Pkgs {
+		err := p.FindStruct(str)
+		if err == nil {
+			return nil
+		}
+		if err != nil && err != swagoErrors.ErrNotFound {
+			return err
+		}
+	}
+	return swagoErrors.ErrNotFound
+}
+
+// Pkg is a package
+type Pkg struct {
+	Project   *Project
+	Name      string
+	Path      string
+	Files     []File
+	Logger    *log.Logger
+	BlackList []*regexp.Regexp
+}
+
 // Analyze a package
 func (p *Pkg) Analyze() error {
 	p.Files = make([]File, 0)
@@ -314,12 +360,26 @@ func (p *Pkg) SearchForStructRoutes(structRoute criteria.StructRoute) []Route {
 }
 
 // FindFunc attempts to find a function in every file of the package
-func (p *Pkg) FindFunc(funcName string, fun *Function) error {
+func (p *Pkg) FindFunc(fun *Function) error {
 	for _, f := range p.Files {
-		err := f.FindFunc(funcName, fun)
+		err := f.FindFunc(fun)
 		if err == nil {
 			return nil
 		} else if err != swagoErrors.ErrNotFound {
+			return err
+		}
+	}
+	return swagoErrors.ErrNotFound
+}
+
+// FindStruct find a struct in a package
+func (p *Pkg) FindStruct(str *Struct) error {
+	for _, f := range p.Files {
+		err := f.FindStruct(str)
+		if err == nil {
+			return nil
+		}
+		if err != nil && err != swagoErrors.ErrNotFound {
 			return err
 		}
 	}

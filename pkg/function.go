@@ -59,9 +59,9 @@ func (f Function) ListVariablesUntil(until token.Pos) []Variable {
 
 // FindArgTypeCallExpression given a call expression it finds the type of the argument
 func (f Function) FindArgTypeCallExpression(callCriteria criteria.CallCriteria) (string, error) {
-	var foundArg ast.Expr
 	var structType string
 	var foundAt token.Pos = -1
+	var ident *ast.Ident
 	ast.Inspect(f.block, func(n ast.Node) bool {
 		if n != nil {
 			switch x := n.(type) {
@@ -69,8 +69,20 @@ func (f Function) FindArgTypeCallExpression(callCriteria criteria.CallCriteria) 
 				fullName := flattenType(x.Fun, f.File.Pkg.Name, f.File.importMappings)
 				pkg, name := TypeParts(fullName)
 				if foundAt == -1 && pkg == callCriteria.Pkg && name == callCriteria.FuncName && len(x.Args) > callCriteria.ParamIndex {
-					foundArg = x.Args[callCriteria.ParamIndex]
-					foundAt = x.Pos()
+					varAST := x.Args[callCriteria.ParamIndex]
+					switch varExpr := varAST.(type) {
+					case *ast.UnaryExpr:
+						var ok bool
+						foundAt = x.Pos()
+						ident, ok = varExpr.X.(*ast.Ident)
+						if !ok {
+							foundAt = -1
+							ident = nil
+						}
+					case *ast.Ident:
+						foundAt = x.Pos()
+						ident = varExpr
+					}
 				}
 				return false
 			default:
@@ -82,11 +94,9 @@ func (f Function) FindArgTypeCallExpression(callCriteria criteria.CallCriteria) 
 	if foundAt == -1 {
 		return structType, swagoErrors.ErrNotFound
 	}
-
-	varName := flattenType(foundArg, f.File.Pkg.Name, f.File.importMappings)
 	variables := f.ListVariablesUntil(foundAt)
 	for _, v := range variables {
-		if v.Name == varName {
+		if v.Name == ident.Name {
 			return v.GoType, nil
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi2"
 	"github.com/javiercbk/swago/criteria"
 	swagoErrors "github.com/javiercbk/swago/errors"
 	"github.com/javiercbk/swago/pkg"
@@ -38,7 +39,7 @@ type SwaggerGenerator struct {
 }
 
 // GenerateSwaggerDoc generates the swagger documentation
-func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria) error {
+func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria, swagger *openapi2.Swagger) error {
 	for _, r := range projectCriterias.Routes {
 		if r.StructRoute != nil {
 			s.findStructRoutes(*r.StructRoute)
@@ -49,12 +50,66 @@ func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 			pkgName, funcName := pkg.TypeParts(s.routes[i].HandlerType)
 			for _, rc := range projectCriterias.Request {
 				requestModel := pkg.Struct{}
-				err := s.findModelInFunc(pkgName, funcName, rc, &requestModel)
-				if err != nil && err != swagoErrors.ErrNotFound {
+				err := s.findStructModel(pkgName, funcName, rc, &requestModel)
+				if err != nil {
 					return err
 				}
+				requestModel.CallCriteria = rc
+				s.routes[i].RequestModel = requestModel
+				// when a route criteria matches, do not process following callCriteria
+				break
+			}
+			for _, rc := range projectCriterias.Response {
+				responseModel := pkg.Struct{}
+				err := s.findStructModel(pkgName, funcName, rc, &responseModel)
+				if err != nil {
+					return err
+				}
+				responseModel.CallCriteria = rc
+				s.routes[i].ResponseModel = responseModel
+				// when a route criteria matches, do not process following callCriteria
+				break
 			}
 		}
+	}
+	s.completeSwagger(projectCriterias, swagger)
+	return nil
+}
+
+func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, swagger *openapi2.Swagger) error {
+	swagger.BasePath = projectCriterias.BasePath
+	swagger.Host = projectCriterias.Host
+	for _, r := range s.routes {
+		parameter := &openapi2.Parameter{
+			In: "body",
+		}
+		err := r.RequestModel.ToSwaggerSchema(parameter)
+		if err != nil {
+			return err
+		}
+		swagger.AddOperation(r.Path, r.HTTPMethod, &openapi2.Operation{
+			Consumes: []string{r.RequestModel.CallCriteria.Consumes},
+			Produces: []string{r.ResponseModel.CallCriteria.Produces},
+			Parameters: []*openapi2.Parameter{
+				parameter,
+			},
+		})
+	}
+	return nil
+}
+
+func (s *SwaggerGenerator) findStructModel(pkgName, funcName string, callCriteria criteria.CallCriteria, model *pkg.Struct) error {
+	err := s.findModelInFunc(pkgName, funcName, callCriteria, model)
+	if err != nil && err != swagoErrors.ErrNotFound {
+		return err
+	}
+	pkgFound := s.getPkg(model.PkgName)
+	if pkgFound == nil {
+		return swagoErrors.ErrNotFound
+	}
+	err = pkgFound.FindStruct(model)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -73,8 +128,10 @@ func (s *SwaggerGenerator) findModelInFunc(pkgName, funcName string, rc criteria
 	if pkgFound == nil {
 		return swagoErrors.ErrNotFound
 	}
-	fun := pkg.Function{}
-	err := pkgFound.FindFunc(funcName, &fun)
+	fun := pkg.Function{
+		Name: funcName,
+	}
+	err := pkgFound.FindFunc(&fun)
 	if err != nil {
 		return err
 	}
@@ -83,9 +140,9 @@ func (s *SwaggerGenerator) findModelInFunc(pkgName, funcName string, rc criteria
 		return err
 	}
 	pkgName, structName := pkg.TypeParts(varType)
-	requestModel.Pkg = pkgName
+	requestModel.PkgName = pkgName
 	requestModel.Name = structName
-	return err
+	return nil
 }
 
 func (s *SwaggerGenerator) getPkg(name string) *pkg.Pkg {

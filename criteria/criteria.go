@@ -4,6 +4,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -25,6 +26,26 @@ const (
 	ErrMissingResponse ParserErr = "missing response matching criteria array"
 	// ErrInvalidRoute is returned when a Criteria contains an invalid route criteria
 	ErrInvalidRoute ParserErr = "invalid route criteria"
+	// MIMEApplicationJSON is the application/json mime
+	MIMEApplicationJSON = "application/json"
+	// RequiredValidation is the swagger required validation
+	RequiredValidation = "required"
+	// ExclusiveMinValidation is the swagger exclusiveMin validation
+	ExclusiveMinValidation = "exclusiveMin"
+	// ExclusiveMaxValidation is the swagger exclusiveMax validation
+	ExclusiveMaxValidation = "exclusiveMax"
+	// EnumValidation is the swagger enum validation
+	EnumValidation = "enum"
+	// MinimumValidation is the swagger minimum validation
+	MinimumValidation = "minimum"
+	// MaximumValidation is the swagger maximum validation
+	MaximumValidation = "maximum"
+	// MinLengthValidation is the swagger minLength validation
+	MinLengthValidation = "minLength"
+	// MaxLengthValidation is the swagger maxLength validation
+	MaxLengthValidation = "maxLength"
+	// PatternValidation is the swagger pattern validation
+	PatternValidation = "pattern"
 	// ErrInvalidCallCriteria is returned when a Criteria contains an invalid callCriteria
 	ErrInvalidCallCriteria ParserErr = "invalid response criteria"
 	requestCallCriteria    string    = "request"
@@ -38,6 +59,8 @@ var (
 
 // Criteria contains all the information to match a Handler, a request Parser and a Response marshaler
 type Criteria struct {
+	BasePath string          `yaml:"basePath"`
+	Host     string          `yaml:"host"`
 	Routes   []RouteCriteria `yaml:"routes"`
 	Request  []CallCriteria  `yaml:"request"`
 	Response []CallCriteria  `yaml:"response"`
@@ -68,11 +91,21 @@ type RouteCriteria struct {
 	FuncRoute   *FuncRoute   `yaml:"funcRoute"`
 }
 
+// ValidationExtractor are slices of regular expression that matches validations
+type ValidationExtractor struct {
+	Validation string           `yaml:"validation"`
+	Tag        []string         `yaml:"tag"`
+	TagRegexp  []*regexp.Regexp `yaml:"-"`
+}
+
 // CallCriteria contains all the information to match a function call with an argument
 type CallCriteria struct {
-	Pkg        string `yaml:"pkg"`
-	FuncName   string `yaml:"funcName"`
-	ParamIndex int    `yaml:"paramIndex"`
+	Pkg         string                         `yaml:"pkg"`
+	FuncName    string                         `yaml:"funcName"`
+	ParamIndex  int                            `yaml:"paramIndex"`
+	Validations map[string]ValidationExtractor `yaml:"validations"`
+	Consumes    string                         `yaml:"consumes"`
+	Produces    string                         `yaml:"produces"`
 }
 
 // Decoder is able to decode and validate a Criteria
@@ -201,6 +234,30 @@ func (decoder Decoder) validateCallCriteria(c *CallCriteria, callCriteriaName st
 	if c.ParamIndex < 0 {
 		decoder.Logger.Printf("%s validation error: funcName %s was given a negative param index\n", callCriteriaName, c.FuncName)
 		return ErrInvalidCallCriteria
+	}
+	if len(c.Consumes) == 0 {
+		c.Consumes = MIMEApplicationJSON
+	}
+	if len(c.Produces) == 0 {
+		c.Produces = MIMEApplicationJSON
+	}
+	if len(c.Validations) > 0 {
+		var err error
+		for name := range c.Validations {
+			extractor := c.Validations[name]
+			tagsLen := len(extractor.Tag)
+			if tagsLen > 0 {
+				extractor.TagRegexp = make([]*regexp.Regexp, tagsLen)
+				for j := range extractor.Tag {
+					extractor.TagRegexp[j], err = regexp.Compile(extractor.Tag[j])
+					if err != nil {
+						decoder.Logger.Printf("%s validation error: failed to compile validation %s. Tag regexp %s \n", callCriteriaName, name, extractor.Tag[j])
+						return err
+					}
+				}
+				c.Validations[name] = extractor
+			}
+		}
 	}
 	return nil
 }

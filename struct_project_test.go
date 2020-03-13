@@ -1,11 +1,19 @@
 package swago
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
+
+	"gopkg.in/yaml.v2"
+
+	"github.com/getkin/kin-openapi/openapi2"
 
 	"github.com/javiercbk/swago/ast"
 	"github.com/javiercbk/swago/criteria"
@@ -150,6 +158,7 @@ func TestGenerateForStructProject(t *testing.T) {
 				FuncName:   "DecodeJsonRequest",
 				Pkg:        "api",
 				ParamIndex: 1,
+				Consumes:   "application/json",
 			},
 		},
 		Response: []criteria.CallCriteria{
@@ -157,13 +166,20 @@ func TestGenerateForStructProject(t *testing.T) {
 				FuncName:   "SendJSONResponse",
 				Pkg:        "api",
 				ParamIndex: 2,
+				Produces:   "application/json",
 			},
 		},
 	}
-	err = sg.GenerateSwaggerDoc(projectCriteria)
+	swagger := openapi2.Swagger{}
+	err = sg.GenerateSwaggerDoc(projectCriteria, &swagger)
 	if err != nil {
 		t.Fatalf("expected err to be nil but was %v", nil)
 	}
+	str, _ := yaml.Marshal(swagger)
+	file, err := os.OpenFile("test.yml", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	_, err = io.Copy(file, bytes.NewReader(str))
+	err = file.Close()
+	fmt.Printf("pfff...swagger => \n%s", str)
 }
 
 func compareFields(t *testing.T, found, expected ast.Field) {

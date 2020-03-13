@@ -214,3 +214,52 @@ func TypeParts(selector string) (string, string) {
 	}
 	return "", selector
 }
+
+func swaggerType(t string) (string, string) {
+	switch t {
+	case EmptyInterface:
+		return "object", ""
+	case goTypeBool:
+		return "boolean", ""
+	case goTypeString:
+		return "string", ""
+	case goTypeInt:
+		return "integer", "int32"
+	case goTypeInt8:
+		return "integer", "int32"
+	case goTypeInt16:
+		return "integer", "int32"
+	case goTypeInt32:
+		return "integer", "int32"
+	case goTypeInt64:
+		return "integer", "int64"
+	case goTypeUint:
+		return "integer", "int32"
+	case goTypeUint8:
+		return "integer", "int32"
+	case goTypeUint16:
+		return "integer", "int32"
+	case goTypeUint32:
+		return "integer", "int32"
+	case goTypeUint64:
+		return "integer", "int64"
+	case goTypeUintptr:
+		return "integer", "int64"
+	case goTypeByte:
+		return "integer", "int32"
+	case goTypeRune:
+		return "string", ""
+	case goTypeFloat32:
+		return "number", "float"
+	case goTypeFloat64:
+		return "number", "double"
+	case goTypeComplex64:
+		return "string", ""
+	case goTypeComplex128:
+		return "string", ""
+	case goTypeTime:
+		return "string", "date-time"
+	default:
+		return "", ""
+	}
+}
