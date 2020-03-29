@@ -1,9 +1,6 @@
 package swago
 
 import (
-	"bytes"
-	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -11,7 +8,7 @@ import (
 	"regexp"
 	"testing"
 
-	"gopkg.in/yaml.v2"
+	"github.com/javiercbk/swago/encoding/swagger"
 
 	"github.com/getkin/kin-openapi/openapi2"
 
@@ -170,16 +167,14 @@ func TestGenerateForStructProject(t *testing.T) {
 			},
 		},
 	}
-	swagger := openapi2.Swagger{}
-	err = sg.GenerateSwaggerDoc(projectCriteria, &swagger)
+	swaggerDoc := openapi2.Swagger{}
+	err = sg.GenerateSwaggerDoc(projectCriteria, &swaggerDoc)
 	if err != nil {
 		t.Fatalf("expected err to be nil but was %v", nil)
 	}
-	str, _ := yaml.Marshal(swagger)
-	file, err := os.OpenFile("test.yml", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
-	_, err = io.Copy(file, bytes.NewReader(str))
+	file, _ := os.OpenFile("test.yml", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	err = swagger.MarshalYAML(swaggerDoc, file)
 	err = file.Close()
-	fmt.Printf("pfff...swagger => \n%s", str)
 }
 
 func compareFields(t *testing.T, found, expected ast.Field) {
