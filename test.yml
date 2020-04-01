@@ -1,0 +1,54 @@
+swagger: "2.0"
+paths:
+  "/handler/1":
+    post:
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+        name: V1Request1
+        required: true
+        schema:
+          - title: 
+            type: object
+            properties:
+              Cool:
+                - title: 
+                  type: string
+  "/handler2/nice":
+    get:
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+        name: V1Request2
+        required: true
+        schema:
+          - title: 
+            type: object
+            properties:
+              Int:
+                - title: 
+                  format: int32
+                  type: integer
+  "/handler/{name}/3":
+    put:
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+        name: V1Request3
+        required: true
+        schema:
+          - title: 
+            type: object
+            properties:
+              Name:
+                - title: 
+                  type: string

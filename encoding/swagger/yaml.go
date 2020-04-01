@@ -19,7 +19,7 @@ var escapePropNameRegExp = regexp.MustCompile("^[a-zA-Z_]+$")
 // MarshalYAML marshals a Swagger definition to YAML
 func MarshalYAML(swagger openapi2.Swagger, w io.Writer) error {
 	ew := &errorWriter{w: w}
-	writeStringProp("swagger", "2.0", 0, ew)
+	writeStringProp("swagger", "\"2.0\"", 0, ew)
 	if !isEmptyInfo(swagger.Info) {
 		marshalInfo(swagger.Info, ew)
 	}
@@ -82,17 +82,21 @@ func escapePropName(name string) string {
 	return escapedName
 }
 
-func writeStringProp(name, value string, indent int, ew *errorWriter) {
+func writeRawStringProp(name, value string, indent int, ew *errorWriter) {
 	hasNewLine := strings.Contains(value, "\n")
-	escapedName := escapePropName(name)
 	if hasNewLine {
-		writeLn(escapedName+": >", indent, ew)
+		writeLn(name+": >", indent, ew)
 		for _, v := range strings.Split(value, "\n") {
 			writeLn(v, indent+1, ew)
 		}
 	} else {
-		writeLn(fmt.Sprintf("%s: %s", escapedName, value), indent, ew)
+		writeLn(fmt.Sprintf("%s: %s", name, value), indent, ew)
 	}
+}
+
+func writeStringProp(name, value string, indent int, ew *errorWriter) {
+	escapedName := escapePropName(name)
+	writeRawStringProp(escapedName, value, indent, ew)
 }
 
 func writeStrSlice(name string, values []string, indent int, ew *errorWriter) {
@@ -102,6 +106,10 @@ func writeStrSlice(name string, values []string, indent int, ew *errorWriter) {
 	for _, v := range values {
 		writeLn(fmt.Sprintf("- %s", v), indent+1, ew)
 	}
+}
+
+func writeArrStringProp(name, value string, indent int, ew *errorWriter) {
+	writeRawStringProp("- "+name, value, indent, ew)
 }
 
 func writeFloat64Prop(name string, value float64, indent int, ew *errorWriter) {
@@ -220,7 +228,7 @@ func marshalPath(pathItem *openapi2.PathItem, ew *errorWriter) {
 	if !isEmptyPathItemParameters(pathItem.Parameters) {
 		writeObject("parameters", 2, ew)
 		for _, p := range pathItem.Parameters {
-			marshalParameter(p, 3, ew)
+			marshalParameterArr(p, 3, ew)
 		}
 	}
 }
@@ -250,7 +258,7 @@ func marshalOperation(operation *openapi2.Operation, ew *errorWriter) {
 	if !isEmptyPathItemParameters(operation.Parameters) {
 		writeObject("parameters", 3, ew)
 		for _, p := range operation.Parameters {
-			marshalParameter(p, 4, ew)
+			marshalParameterArr(p, 4, ew)
 		}
 	}
 	if !isEmptyResponses(operation.Responses) {
@@ -286,6 +294,68 @@ func marshalParameter(parameter *openapi2.Parameter, indent int, ew *errorWriter
 	}
 	if !isEmptyString(parameter.In) {
 		writeStringProp("in", parameter.In, indent, ew)
+	}
+	if !isEmptyString(parameter.Name) {
+		writeStringProp("name", parameter.Name, indent, ew)
+	}
+	if !isEmptyString(parameter.Description) {
+		writeStringProp("description", parameter.Description, indent, ew)
+	}
+	if !isEmptyString(parameter.Pattern) {
+		writeStringProp("pattern", parameter.Pattern, indent, ew)
+	}
+	writeBoolProp("required", parameter.Required, indent, ew)
+	if parameter.UniqueItems {
+		writeBoolProp("uniqueItems", parameter.UniqueItems, indent, ew)
+	}
+	if parameter.ExclusiveMin {
+		writeBoolProp("exclusiveMinimum", parameter.ExclusiveMin, indent, ew)
+	}
+	if parameter.ExclusiveMax {
+		writeBoolProp("exclusiveMaximum", parameter.ExclusiveMax, indent, ew)
+	}
+	if !isEmptySchemaRef(parameter.Schema) {
+		writeObject("schema", indent, ew)
+		marshalSchemaRef(parameter.Schema, indent+1, ew)
+	}
+	if !isEmptyInterfaceSlice(parameter.Enum) {
+		marshalInterface("enum", parameter.Enum, indent, ew)
+	}
+	if !isEmptyFloat64Ptr(parameter.Minimum) {
+		writeFloat64Prop("minimum", *parameter.Minimum, indent, ew)
+	}
+	if !isEmptyFloat64Ptr(parameter.Maximum) {
+		writeFloat64Prop("maximum", *parameter.Maximum, indent, ew)
+	}
+	if !isEmptyUint64(parameter.MinLength) {
+		writeUint64Prop("minLength", parameter.MinLength, indent, ew)
+	}
+	if !isEmptyUint64Ptr(parameter.MaxLength) {
+		writeUint64Prop("maxLength", *parameter.MaxLength, indent, ew)
+	}
+	if !isEmptySchemaRef(parameter.Items) {
+		writeObject("items", indent, ew)
+		marshalSchemaRef(parameter.Items, indent+1, ew)
+	}
+	if !isEmptyUint64(parameter.MinItems) {
+		writeUint64Prop("minItems", parameter.MinItems, indent, ew)
+	}
+	if !isEmptyUint64Ptr(parameter.MaxItems) {
+		writeUint64Prop("maxItems", *parameter.MaxItems, indent, ew)
+	}
+}
+
+func marshalParameterArr(parameter *openapi2.Parameter, indent int, ew *errorWriter) {
+	// in is a required property so it MUST be present
+	writeArrStringProp("in", parameter.In, indent, ew)
+	if !isEmptyString(parameter.Ref) {
+		writeStringProp("$ref", parameter.Ref, indent, ew)
+	}
+	if !isEmptyString(parameter.Type) {
+		writeStringProp("type", parameter.Type, indent, ew)
+	}
+	if !isEmptyString(parameter.Format) {
+		writeStringProp("format", parameter.Format, indent, ew)
 	}
 	if !isEmptyString(parameter.Name) {
 		writeStringProp("name", parameter.Name, indent, ew)
@@ -412,7 +482,15 @@ func marshalSchemaRef(schemaRef *openapi3.SchemaRef, indent int, ew *errorWriter
 	if !isEmptyString(schemaRef.Ref) {
 		writeStringProp("$ref", schemaRef.Ref, indent, ew)
 	} else if schemaRef.Value != nil {
-		marshalSchema(schemaRef.Value, indent, ew)
+		marshalSchemaArr(schemaRef.Value, indent, ew)
+	}
+}
+
+func marshalSchemaRefArr(schemaRef *openapi3.SchemaRef, indent int, ew *errorWriter) {
+	if !isEmptyString(schemaRef.Ref) {
+		writeArrStringProp("$ref", schemaRef.Ref, indent, ew)
+	} else if schemaRef.Value != nil {
+		marshalSchemaArr(schemaRef.Value, indent, ew)
 	}
 }
 
@@ -481,7 +559,106 @@ func marshalSchema(schema *openapi3.Schema, indent int, ew *errorWriter) {
 	if !isEmptySchemaRefSlice(schema.AllOf) {
 		writeObject("allOf", indent, ew)
 		for _, allOf := range schema.AllOf {
-			marshalSchemaRef(allOf, indent+1, ew)
+			marshalSchemaRefArr(allOf, indent+1, ew)
+		}
+	}
+	if !isEmptySchemaRefMap(schema.Properties) {
+		writeObject("properties", indent, ew)
+		for name, property := range schema.Properties {
+			writeObject(name, indent+1, ew)
+			marshalSchemaRef(property, indent+2, ew)
+		}
+	}
+	if !isEmptySchemaRef(schema.AdditionalProperties) {
+		writeObject("additionalProperties", indent, ew)
+		marshalSchemaRef(schema.AdditionalProperties, indent+1, ew)
+	}
+	if !isEmptyDiscriminator(schema.Discriminator) {
+		marshalDiscriminator(schema.Discriminator, indent, ew)
+	}
+	if schema.ReadOnly {
+		writeBoolProp("readOnly", schema.ReadOnly, indent, ew)
+	}
+	if !isEmptyInterface(schema.XML) {
+		marshalInterface("xml", schema.XML, indent, ew)
+	}
+	if !isEmptyExternalDocs(schema.ExternalDocs) {
+		marshalExternalDocs(schema.ExternalDocs, indent, ew)
+	}
+	if !isEmptyInterface(schema.Example) {
+		marshalInterface("example", schema.Example, indent, ew)
+	}
+	if !isEmptyStrSlice(schema.Required) {
+		writeStrSlice("required", schema.Required, indent, ew)
+	}
+}
+
+func marshalSchemaArr(schema *openapi3.Schema, indent int, ew *errorWriter) {
+	// tipe is required, so it must exists
+	writeArrStringProp("title", schema.Title, indent, ew)
+	indent++
+	if !isEmptyString(schema.Format) {
+		writeStringProp("format", schema.Format, indent, ew)
+	}
+	if !isEmptyString(schema.Type) {
+		writeStringProp("type", schema.Type, indent, ew)
+	}
+	if !isEmptyString(schema.Description) {
+		writeStringProp("description", schema.Description, indent, ew)
+	}
+	if !isEmptyInterface(schema.Default) {
+		marshalInterface("default", schema.Default, indent, ew)
+	}
+	if !isEmptyString(schema.Pattern) {
+		writeStringProp("pattern", schema.Pattern, indent, ew)
+	}
+	if !isEmptyInterfaceSlice(schema.Enum) {
+		marshalInterface("enum", schema.Enum, indent, ew)
+	}
+	if !isEmptyFloat64Ptr(schema.MultipleOf) {
+		writeFloat64Prop("multipleOf", *schema.MultipleOf, indent, ew)
+	}
+	if !isEmptyFloat64Ptr(schema.Max) {
+		writeFloat64Prop("maximum", *schema.Max, indent, ew)
+	}
+	if schema.ExclusiveMax {
+		writeBoolProp("exclusiveMaximum", schema.ExclusiveMax, indent, ew)
+	}
+	if !isEmptyFloat64Ptr(schema.Min) {
+		writeFloat64Prop("minimum", *schema.Min, indent, ew)
+	}
+	if schema.ExclusiveMin {
+		writeBoolProp("exclusiveMinimum", schema.ExclusiveMin, indent, ew)
+	}
+	if !isEmptyUint64Ptr(schema.MaxLength) {
+		writeUint64Prop("maxLength", *schema.MaxLength, indent, ew)
+	}
+	if !isEmptyUint64(schema.MinLength) {
+		writeUint64Prop("minLength", schema.MinLength, indent, ew)
+	}
+	if !isEmptyUint64Ptr(schema.MaxItems) {
+		writeUint64Prop("maxItems", *schema.MaxItems, indent, ew)
+	}
+	if !isEmptyUint64(schema.MinItems) {
+		writeUint64Prop("minItems", schema.MinItems, indent, ew)
+	}
+	if schema.UniqueItems {
+		writeBoolProp("uniqueItems", schema.UniqueItems, indent, ew)
+	}
+	if !isEmptyUint64Ptr(schema.MaxProps) {
+		writeUint64Prop("maxProperties", *schema.MaxProps, indent, ew)
+	}
+	if !isEmptyUint64(schema.MinProps) {
+		writeUint64Prop("minProperties", schema.MinProps, indent, ew)
+	}
+	if !isEmptySchemaRef(schema.Items) {
+		writeObject("items", indent, ew)
+		marshalSchemaRef(schema.Items, indent+1, ew)
+	}
+	if !isEmptySchemaRefSlice(schema.AllOf) {
+		writeObject("allOf", indent, ew)
+		for _, allOf := range schema.AllOf {
+			marshalSchemaRefArr(allOf, indent+1, ew)
 		}
 	}
 	if !isEmptySchemaRefMap(schema.Properties) {
@@ -528,9 +705,8 @@ func marshalDiscriminator(discriminator *openapi3.Discriminator, indent int, ew 
 func marshalTags(tags []*openapi3.Tag, indent int, ew *errorWriter) {
 	writeObject("tags", indent, ew)
 	for _, tag := range tags {
-		if !isEmptyString(tag.Name) {
-			writeStringProp("name", tag.Name, indent+1, ew)
-		}
+		// name is a required property for tags, so it must exists
+		writeArrStringProp("name", tag.Name, indent+1, ew)
 		if !isEmptyString(tag.Description) {
 			writeStringProp("description", tag.Description, indent+1, ew)
 		}

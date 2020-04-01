@@ -50,7 +50,7 @@ func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 			pkgName, funcName := pkg.TypeParts(s.routes[i].HandlerType)
 			for _, rc := range projectCriterias.Request {
 				requestModel := pkg.Struct{}
-				err := s.findStructModel(pkgName, funcName, rc, &requestModel)
+				err := s.findReqModel(pkgName, funcName, rc, &requestModel)
 				if err != nil {
 					return err
 				}
@@ -59,17 +59,16 @@ func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 				// when a route criteria matches, do not process following callCriteria
 				break
 			}
+			serviceResponses := make([]pkg.ServiceResponse, 0)
 			for _, rc := range projectCriterias.Response {
 				responseModel := pkg.Struct{}
-				err := s.findStructModel(pkgName, funcName, rc, &responseModel)
+				responses, err := s.findResModels(pkgName, funcName, rc)
+				serviceResponses = append(serviceResponses, responses)
 				if err != nil {
 					return err
 				}
-				responseModel.CallCriteria = rc
-				s.routes[i].ResponseModel = responseModel
-				// when a route criteria matches, do not process following callCriteria
-				break
 			}
+			s.routes[i].ServiceResponses = serviceResponses
 		}
 	}
 	s.completeSwagger(projectCriterias, swagger)
@@ -87,19 +86,28 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 		if err != nil {
 			return err
 		}
+		produces := r.RequestModel.CallCriteria.Consumes
+		for _, s := range r.ServiceResponses {
+			if len(s.Model.CallCriteria.Produces) > 0 {
+				produces = s.Model.CallCriteria.Produces
+				break
+			}
+		}
+		swaggerResponses = make(map[string]openapi2.Response)
 		swagger.AddOperation(r.Path, r.HTTPMethod, &openapi2.Operation{
 			Consumes: []string{r.RequestModel.CallCriteria.Consumes},
-			Produces: []string{r.ResponseModel.CallCriteria.Produces},
+			Produces: []string{produces},
 			Parameters: []*openapi2.Parameter{
 				parameter,
 			},
+			Responses: swaggerResponses,
 		})
 	}
 	return nil
 }
 
-func (s *SwaggerGenerator) findStructModel(pkgName, funcName string, callCriteria criteria.CallCriteria, model *pkg.Struct) error {
-	err := s.findModelInFunc(pkgName, funcName, callCriteria, model)
+func (s *SwaggerGenerator) findReqModel(pkgName, funcName string, callCriteria criteria.CallCriteria, model *pkg.Struct) error {
+	err := s.findReqModelInFunc(pkgName, funcName, callCriteria, model)
 	if err != nil && err != swagoErrors.ErrNotFound {
 		return err
 	}
@@ -114,6 +122,24 @@ func (s *SwaggerGenerator) findStructModel(pkgName, funcName string, callCriteri
 	return nil
 }
 
+func (s *SwaggerGenerator) findResModels(pkgName, funcName string, callCriteria criteria.CallCriteria) ([]pkg.ServiceResponse, error) {
+	serviceResponses, err := s.findServiceResponsesInFunc(pkgName, funcName, callCriteria)
+	if err != nil && err != swagoErrors.ErrNotFound {
+		return serviceResponse, err
+	}
+	for i := range serviceResponses {
+		pkgFound := s.getPkg(serviceResponses[i].Model.PkgName)
+		if pkgFound == nil {
+			return serviceResponse, swagoErrors.ErrNotFound
+		}
+		err = pkgFound.FindStruct(serviceResponses[i].Model)
+		if err != nil {
+			return serviceResponses, err
+		}
+	}
+	return serviceResponses, nil
+}
+
 func (s *SwaggerGenerator) findStructRoutes(structRoute criteria.StructRoute) []pkg.Route {
 	s.routes = make([]pkg.Route, 0)
 	for _, p := range s.Pkgs {
@@ -123,15 +149,11 @@ func (s *SwaggerGenerator) findStructRoutes(structRoute criteria.StructRoute) []
 	return s.routes
 }
 
-func (s *SwaggerGenerator) findModelInFunc(pkgName, funcName string, rc criteria.CallCriteria, requestModel *pkg.Struct) error {
-	pkgFound := s.getPkg(pkgName)
-	if pkgFound == nil {
-		return swagoErrors.ErrNotFound
-	}
+func (s *SwaggerGenerator) findReqModelInFunc(pkgName, funcName string, rc criteria.CallCriteria, requestModel *pkg.Struct) error {
 	fun := pkg.Function{
 		Name: funcName,
 	}
-	err := pkgFound.FindFunc(&fun)
+	err := findFunc(pkgName, funcName, &fun)
 	if err != nil {
 		return err
 	}
@@ -143,6 +165,42 @@ func (s *SwaggerGenerator) findModelInFunc(pkgName, funcName string, rc criteria
 	requestModel.PkgName = pkgName
 	requestModel.Name = structName
 	return nil
+}
+
+func (s *SwaggerGenerator) findServiceResponsesInFunc(pkgName, funcName string, rc criteria.CallCriteria) ([]ServiceResponse, error) {
+	serviceResponses := make([]ServiceResponse, 0)
+	fun := pkg.Function{
+		Name: funcName,
+	}
+	err := findFunc(pkgName, funcName, &fun)
+	if err != nil {
+		return serviceResponses, err
+	}
+	lastPos := -1
+	var varType string
+	for err != nil {
+		modelResponse := ModelResponse{}
+		err = fun.FindResponseCallExpressionAfter(rc, &lastPos, &modelResponse)
+		pkgName, structName := pkg.TypeParts(varType)
+		requestModel.PkgName = pkgName
+		requestModel.Name = structName
+		serviceResponses = append(serviceResponses, requestModel)
+	}
+	if err != ErrNotFound {
+		return serviceResponses, err
+	}
+	return serviceResponses, nil
+}
+
+func (s *SwaggerGenerator) findFunc(pkgName, funcName string, fun *pkg.Function) error {
+	pkgFound := s.getPkg(pkgName)
+	if pkgFound == nil {
+		return swagoErrors.ErrNotFound
+	}
+	err := pkgFound.FindFunc(fun)
+	if err != nil {
+		return err
+	}
 }
 
 func (s *SwaggerGenerator) getPkg(name string) *pkg.Pkg {
