@@ -91,8 +91,9 @@ func (file *File) SearchForStructRoutes(structRoute criteria.StructRoute) []Rout
 		case *ast.CompositeLit:
 			if file.matchesStructRoute(x, structRoute) {
 				foundRoute := Route{
-					Pkg:  file.Pkg.Name,
-					File: file.Name,
+					Pkg:                   file.Pkg.Name,
+					File:                  file.Name,
+					NamedPathVarExtractor: structRoute.NamedPathVarExtractorRegexp,
 				}
 				file.compositeLitToRoute(x, &foundRoute, structRoute)
 				routes = append(routes, foundRoute)
@@ -141,9 +142,14 @@ func (file *File) extractType(genDecl *ast.GenDecl) {
 					tag = strings.Trim(f.Tag.Value, "`")
 					tag = strings.ReplaceAll(tag, "\\\"", "\"")
 				}
+				// if field name is empty then it this is an embed struct
+				fieldName := ""
+				if len(f.Names) > 0 {
+					fieldName = f.Names[0].Name
+				}
 				newField := Field{
 					Tag:  tag,
-					Name: f.Names[0].Name,
+					Name: fieldName,
 					Type: typeStr,
 				}
 				s.Fields = append(s.Fields, newField)
@@ -456,7 +462,10 @@ func extractValueSpec(file *File, genDecl *ast.GenDecl, isConst bool) {
 			for n := range i.Names {
 				v := &Variable{}
 				v.Extract(i.Names[n])
-				v.AssignValue(i.Values[n])
+				// if len(i.Values) is n then this is a variable assignment with another variable
+				if len(i.Values) > 0 && len(i.Values) >= n+1 {
+					v.AssignValue(i.Values[n])
+				}
 				if isConst {
 					file.GlobalConst = append(file.GlobalConst, *v)
 				} else {

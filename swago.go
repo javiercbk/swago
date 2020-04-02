@@ -25,10 +25,10 @@ const (
 )
 
 var (
-	defaultURLPathExtractor = regexp.MustCompile("\\{([a-zA-Z0-9]+)\\}")
-	defaultBlacklist        = []*regexp.Regexp{
+	defaultBlacklist = []*regexp.Regexp{
 		regexp.MustCompile(".*_test\\.go"),
 		regexp.MustCompile(".*" + string(os.PathSeparator) + "testdata" + string(os.PathSeparator) + ".*"),
+		regexp.MustCompile(".*" + string(os.PathSeparator) + "vendor" + string(os.PathSeparator) + ".*"),
 	}
 )
 
@@ -99,23 +99,35 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 		}
 		swaggerResponses := make(map[string]*openapi2.Response)
 		for _, sResp := range r.ServiceResponses {
-			err := sResp.Model.ToSwaggerSchema(nil)
-			if err != nil {
-				return err
-			}
-			httpStatusCode, err := strconv.Atoi(sResp.Code)
-			if err == nil {
-				// ignoring unknown codes
-				swaggerResponses[sResp.Code] = &openapi2.Response{
-					Description: http.StatusText(httpStatusCode),
-					Schema: &openapi3.SchemaRef{
-						Value: sResp.Model.Schema,
-					},
+			httpStatusCode, success := parseCode(sResp.Code)
+			if httpStatusCode > 0 {
+				if success {
+					err := sResp.Model.ToSwaggerSchema(nil)
+					if err != nil {
+						return err
+					}
+					if err == nil {
+						// ignoring unknown codes
+						swaggerResponses[sResp.Code] = &openapi2.Response{
+							Description: http.StatusText(httpStatusCode),
+							Schema: &openapi3.SchemaRef{
+								Value: sResp.Model.Schema,
+							},
+						}
+					}
+
+				} else {
+					swaggerResponses[sResp.Code] = &openapi2.Response{
+						Description: http.StatusText(httpStatusCode),
+						Schema: &openapi3.SchemaRef{
+							Value: projectCriterias.ErrorResponse,
+						},
+					}
 				}
 			}
 		}
 		parameters := make([]*openapi2.Parameter, 0, 2)
-		urlParameters := extractURLParameters(r.Path, defaultURLPathExtractor)
+		urlParameters := extractNamedPathVarParameters(r.Path, r.NamedPathVarExtractor)
 		parameters = append(parameters, urlParameters...)
 		parameters = append(parameters, parameter)
 		swagger.AddOperation(r.Path, r.HTTPMethod, &openapi2.Operation{
@@ -150,6 +162,7 @@ func (s *SwaggerGenerator) findResModels(pkgName, funcName string, callCriteria 
 		return serviceResponses, err
 	}
 	for i := range serviceResponses {
+
 		pkgFound := s.getPkg(serviceResponses[i].Model.PkgName)
 		if pkgFound == nil {
 			return serviceResponses, swagoErrors.ErrNotFound
@@ -214,6 +227,18 @@ func (s *SwaggerGenerator) findServiceResponsesInFunc(pkgName, funcName string, 
 			Code: modelResponse.Code,
 		})
 	}
+	lastPos = -1
+	// FIXME: should be done in the same loop as above
+	for {
+		modelResponse := pkg.ModelResponse{}
+		err = fun.FindErrorResponseCallExpressionAfter(rc, &lastPos, &modelResponse)
+		if err != nil {
+			break
+		}
+		serviceResponses = append(serviceResponses, pkg.ServiceResponse{
+			Code: modelResponse.Code,
+		})
+	}
 	if err != swagoErrors.ErrNotFound {
 		return serviceResponses, err
 	}
@@ -252,6 +277,7 @@ func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, logger *log.Logge
 	}
 	goModFilePath := path.Join(rootPath, modFile)
 	logger.Printf("looking for module declaration in file %s\n", goModFilePath)
+	moduleName := ""
 	goModFile, err := os.Open(goModFilePath)
 	if err != nil {
 		_, ok := err.(*os.PathError)
@@ -259,24 +285,22 @@ func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, logger *log.Logge
 			logger.Printf("error opening file %s: %v\n", goModFilePath, err)
 			return generator, err
 		}
-		// if file does not exist then is not a module
-		return generator, nil
-	}
-	defer goModFile.Close()
-	scanner := bufio.NewScanner(goModFile)
-	scanner.Split(bufio.ScanLines)
-	moduleName := ""
-	logger.Printf("reading file %s\n", goModFilePath)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "module") {
-			moduleName = line[7:]
-			break
+	} else {
+		defer goModFile.Close()
+		scanner := bufio.NewScanner(goModFile)
+		scanner.Split(bufio.ScanLines)
+		logger.Printf("reading file %s\n", goModFilePath)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "module") {
+				moduleName = line[7:]
+				break
+			}
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		logger.Printf("error reading file %s: %v\n", goModFilePath, err)
-		return generator, err
+		if err := scanner.Err(); err != nil {
+			logger.Printf("error reading file %s: %v\n", goModFilePath, err)
+			return generator, err
+		}
 	}
 	generator.ModuleName = moduleName
 	generator.Pkgs, err = pkg.AnalizeProjectWithBlacklist(rootPath, logger, blacklist)
@@ -288,7 +312,7 @@ func NewSwaggerGenerator(rootPath, goPath string, logger *log.Logger) (*SwaggerG
 	return NewSwaggerGeneratorWithBlacklist(rootPath, goPath, logger, defaultBlacklist)
 }
 
-func extractURLParameters(path string, r *regexp.Regexp) []*openapi2.Parameter {
+func extractNamedPathVarParameters(path string, r *regexp.Regexp) []*openapi2.Parameter {
 	foundPathParameters := make([]*openapi2.Parameter, 0)
 	found := r.FindAllStringSubmatch(path, -1)
 	for _, paramArr := range found {
@@ -302,4 +326,202 @@ func extractURLParameters(path string, r *regexp.Regexp) []*openapi2.Parameter {
 		})
 	}
 	return foundPathParameters
+}
+
+func parseCode(code string) (int, bool) {
+	// FIXME: this function should be configurable
+	codeInt, err := strconv.Atoi(code)
+	if err != nil {
+		if strings.Contains(code, "StatusContinue") {
+			codeInt = 100
+		}
+		if strings.Contains(code, "StatusSwitchingProtocols") {
+			codeInt = 101
+		}
+		if strings.Contains(code, "StatusProcessing") {
+			codeInt = 102
+		}
+		if strings.Contains(code, "StatusEarlyHints") {
+			codeInt = 103
+		}
+		if strings.Contains(code, "StatusOK") {
+			codeInt = 200
+		}
+		if strings.Contains(code, "StatusCreated") {
+			codeInt = 201
+		}
+		if strings.Contains(code, "StatusAccepted") {
+			codeInt = 202
+		}
+		if strings.Contains(code, "StatusNonAuthoritativeInfo") {
+			codeInt = 203
+		}
+		if strings.Contains(code, "StatusNoContent") {
+			codeInt = 204
+		}
+		if strings.Contains(code, "StatusResetContent") {
+			codeInt = 205
+		}
+		if strings.Contains(code, "StatusPartialContent") {
+			codeInt = 206
+		}
+		if strings.Contains(code, "StatusMultiStatus") {
+			codeInt = 207
+		}
+		if strings.Contains(code, "StatusAlreadyReported") {
+			codeInt = 208
+		}
+		if strings.Contains(code, "StatusIMUsed") {
+			codeInt = 226
+		}
+		if strings.Contains(code, "StatusMultipleChoices") {
+			codeInt = 300
+		}
+		if strings.Contains(code, "StatusMovedPermanently") {
+			codeInt = 301
+		}
+		if strings.Contains(code, "StatusFound") {
+			codeInt = 302
+		}
+		if strings.Contains(code, "StatusSeeOther") {
+			codeInt = 303
+		}
+		if strings.Contains(code, "StatusNotModified") {
+			codeInt = 304
+		}
+		if strings.Contains(code, "StatusUseProxy") {
+			codeInt = 305
+		}
+		if strings.Contains(code, "StatusTemporaryRedirect") {
+			codeInt = 307
+		}
+		if strings.Contains(code, "StatusPermanentRedirect") {
+			codeInt = 308
+		}
+		if strings.Contains(code, "StatusBadRequest") {
+			codeInt = 400
+		}
+		if strings.Contains(code, "StatusUnauthorized") {
+			codeInt = 401
+		}
+		if strings.Contains(code, "StatusPaymentRequired") {
+			codeInt = 402
+		}
+		if strings.Contains(code, "StatusForbidden") {
+			codeInt = 403
+		}
+		if strings.Contains(code, "StatusNotFound") {
+			codeInt = 404
+		}
+		if strings.Contains(code, "StatusMethodNotAllowed") {
+			codeInt = 405
+		}
+		if strings.Contains(code, "StatusNotAcceptable") {
+			codeInt = 406
+		}
+		if strings.Contains(code, "StatusProxyAuthRequired") {
+			codeInt = 407
+		}
+		if strings.Contains(code, "StatusRequestTimeout") {
+			codeInt = 408
+		}
+		if strings.Contains(code, "StatusConflict") {
+			codeInt = 409
+		}
+		if strings.Contains(code, "StatusGone") {
+			codeInt = 410
+		}
+		if strings.Contains(code, "StatusLengthRequired") {
+			codeInt = 411
+		}
+		if strings.Contains(code, "StatusPreconditionFailed") {
+			codeInt = 412
+		}
+		if strings.Contains(code, "StatusRequestEntityTooLarge") {
+			codeInt = 413
+		}
+		if strings.Contains(code, "StatusRequestURITooLong") {
+			codeInt = 414
+		}
+		if strings.Contains(code, "StatusUnsupportedMediaType") {
+			codeInt = 415
+		}
+		if strings.Contains(code, "StatusRequestedRangeNotSatisfiable") {
+			codeInt = 416
+		}
+		if strings.Contains(code, "StatusExpectationFailed") {
+			codeInt = 417
+		}
+		if strings.Contains(code, "StatusTeapot") {
+			codeInt = 418
+		}
+		if strings.Contains(code, "StatusMisdirectedRequest") {
+			codeInt = 421
+		}
+		if strings.Contains(code, "StatusUnprocessableEntity") {
+			codeInt = 422
+		}
+		if strings.Contains(code, "StatusLocked") {
+			codeInt = 423
+		}
+		if strings.Contains(code, "StatusFailedDependency") {
+			codeInt = 424
+		}
+		if strings.Contains(code, "StatusTooEarly") {
+			codeInt = 425
+		}
+		if strings.Contains(code, "StatusUpgradeRequired") {
+			codeInt = 426
+		}
+		if strings.Contains(code, "StatusPreconditionRequired") {
+			codeInt = 428
+		}
+		if strings.Contains(code, "StatusTooManyRequests") {
+			codeInt = 429
+		}
+		if strings.Contains(code, "StatusRequestHeaderFieldsTooLarge") {
+			codeInt = 431
+		}
+		if strings.Contains(code, "StatusUnavailableForLegalReasons") {
+			codeInt = 451
+		}
+		if strings.Contains(code, "StatusInternalServerError") {
+			codeInt = 500
+		}
+		if strings.Contains(code, "StatusNotImplemented") {
+			codeInt = 501
+		}
+		if strings.Contains(code, "StatusBadGateway") {
+			codeInt = 502
+		}
+		if strings.Contains(code, "StatusServiceUnavailable") {
+			codeInt = 503
+		}
+		if strings.Contains(code, "StatusGatewayTimeout") {
+			codeInt = 504
+		}
+		if strings.Contains(code, "StatusHTTPVersionNotSupported") {
+			codeInt = 505
+		}
+		if strings.Contains(code, "StatusVariantAlsoNegotiates") {
+			codeInt = 506
+		}
+		if strings.Contains(code, "StatusInsufficientStorage") {
+			codeInt = 507
+		}
+		if strings.Contains(code, "StatusLoopDetected") {
+			codeInt = 508
+		}
+		if strings.Contains(code, "StatusNotExtended") {
+			codeInt = 510
+		}
+		if strings.Contains(code, "StatusNetworkAuthenticationRequired") {
+			codeInt = 511
+		}
+	}
+	isSuccessful := false
+	if codeInt >= 200 && codeInt <= 299 {
+		isSuccessful = true
+	}
+	return codeInt, isSuccessful
 }

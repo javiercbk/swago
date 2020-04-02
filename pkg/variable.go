@@ -89,10 +89,17 @@ func (e *variableHelper) assign(n ast.Node, v *Variable) {
 					lastVar.MapValue = make(map[string]*Variable)
 					for _, el := range x.Elts {
 						kv := el.(*ast.KeyValueExpr)
-						ident := kv.Key.(*ast.Ident)
-						valVar := &Variable{}
-						valVar.Extract(kv.Value)
-						lastVar.MapValue[ident.Name] = valVar
+						switch keyAST := kv.Key.(type) {
+						case *ast.Ident:
+							valVar := &Variable{}
+							valVar.Extract(kv.Value)
+							lastVar.MapValue[keyAST.Name] = valVar
+						case *ast.BasicLit:
+							valVar := &Variable{}
+							valVar.Extract(keyAST)
+							// FIXME: need the variable name here
+							lastVar.MapValue[keyAST.Value] = valVar
+						}
 					}
 				}
 			}

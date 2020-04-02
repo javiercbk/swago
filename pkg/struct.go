@@ -29,6 +29,7 @@ type Struct struct {
 func (s *Struct) ToSwaggerSchema(parameter *openapi2.Parameter) error {
 	properties := make(map[string]*openapi3.SchemaRef)
 	requiredProps := make([]string, 0)
+	s.addEmbeddedStruct()
 	for _, f := range s.Fields {
 		t, format := swaggerType(f.Type)
 		if extractBooleanValidation(criteria.RequiredValidation, f.Tag, s.CallCriteria) {
@@ -94,6 +95,42 @@ func (s *Struct) ToSwaggerSchema(parameter *openapi2.Parameter) error {
 		}
 		parameter.Name = s.Name
 		parameter.Required = true
+	}
+	return nil
+}
+
+type embeddedStruct struct {
+	index int
+	pkg   string
+	name  string
+}
+
+func (s *Struct) addEmbeddedStruct() error {
+	embeddedStructs := make([]embeddedStruct, 0)
+	for i := range s.Fields {
+		if len(s.Fields[i].Name) == 0 {
+			pkg, name := TypeParts(s.Fields[i].Type)
+			embeddedStructs = append(embeddedStructs, embeddedStruct{
+				index: i,
+				pkg:   pkg,
+				name:  name,
+			})
+		}
+	}
+	for i := len(embeddedStructs) - 1; i > 0; i-- {
+		idx := embeddedStructs[i].index
+		s.Fields = append(s.Fields[:idx], s.Fields[idx+1:]...)
+	}
+	for _, es := range embeddedStructs {
+		embeddedStruct := Struct{
+			Name: es.name,
+		}
+		err := s.File.Pkg.Project.FindStruct(&embeddedStruct)
+		if err != nil {
+			return err
+		}
+		embeddedStruct.addEmbeddedStruct()
+		s.Fields = append(s.Fields, embeddedStruct.Fields...)
 	}
 	return nil
 }
