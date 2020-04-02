@@ -2,13 +2,17 @@ package swago
 
 import (
 	"bufio"
+	"go/token"
 	"log"
+	"net/http"
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi2"
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/javiercbk/swago/criteria"
 	swagoErrors "github.com/javiercbk/swago/errors"
 	"github.com/javiercbk/swago/pkg"
@@ -21,7 +25,8 @@ const (
 )
 
 var (
-	defaultBlacklist = []*regexp.Regexp{
+	defaultURLPathExtractor = regexp.MustCompile("\\{([a-zA-Z0-9]+)\\}")
+	defaultBlacklist        = []*regexp.Regexp{
 		regexp.MustCompile(".*_test\\.go"),
 		regexp.MustCompile(".*" + string(os.PathSeparator) + "testdata" + string(os.PathSeparator) + ".*"),
 	}
@@ -61,9 +66,8 @@ func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 			}
 			serviceResponses := make([]pkg.ServiceResponse, 0)
 			for _, rc := range projectCriterias.Response {
-				responseModel := pkg.Struct{}
 				responses, err := s.findResModels(pkgName, funcName, rc)
-				serviceResponses = append(serviceResponses, responses)
+				serviceResponses = append(serviceResponses, responses...)
 				if err != nil {
 					return err
 				}
@@ -93,14 +97,32 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 				break
 			}
 		}
-		swaggerResponses = make(map[string]openapi2.Response)
+		swaggerResponses := make(map[string]*openapi2.Response)
+		for _, sResp := range r.ServiceResponses {
+			err := sResp.Model.ToSwaggerSchema(nil)
+			if err != nil {
+				return err
+			}
+			httpStatusCode, err := strconv.Atoi(sResp.Code)
+			if err == nil {
+				// ignoring unknown codes
+				swaggerResponses[sResp.Code] = &openapi2.Response{
+					Description: http.StatusText(httpStatusCode),
+					Schema: &openapi3.SchemaRef{
+						Value: sResp.Model.Schema,
+					},
+				}
+			}
+		}
+		parameters := make([]*openapi2.Parameter, 0, 2)
+		urlParameters := extractURLParameters(r.Path, defaultURLPathExtractor)
+		parameters = append(parameters, urlParameters...)
+		parameters = append(parameters, parameter)
 		swagger.AddOperation(r.Path, r.HTTPMethod, &openapi2.Operation{
-			Consumes: []string{r.RequestModel.CallCriteria.Consumes},
-			Produces: []string{produces},
-			Parameters: []*openapi2.Parameter{
-				parameter,
-			},
-			Responses: swaggerResponses,
+			Consumes:   []string{r.RequestModel.CallCriteria.Consumes},
+			Produces:   []string{produces},
+			Parameters: parameters,
+			Responses:  swaggerResponses,
 		})
 	}
 	return nil
@@ -122,17 +144,17 @@ func (s *SwaggerGenerator) findReqModel(pkgName, funcName string, callCriteria c
 	return nil
 }
 
-func (s *SwaggerGenerator) findResModels(pkgName, funcName string, callCriteria criteria.CallCriteria) ([]pkg.ServiceResponse, error) {
+func (s *SwaggerGenerator) findResModels(pkgName, funcName string, callCriteria criteria.ResponseCallCriteria) ([]pkg.ServiceResponse, error) {
 	serviceResponses, err := s.findServiceResponsesInFunc(pkgName, funcName, callCriteria)
 	if err != nil && err != swagoErrors.ErrNotFound {
-		return serviceResponse, err
+		return serviceResponses, err
 	}
 	for i := range serviceResponses {
 		pkgFound := s.getPkg(serviceResponses[i].Model.PkgName)
 		if pkgFound == nil {
-			return serviceResponse, swagoErrors.ErrNotFound
+			return serviceResponses, swagoErrors.ErrNotFound
 		}
-		err = pkgFound.FindStruct(serviceResponses[i].Model)
+		err = pkgFound.FindStruct(&serviceResponses[i].Model)
 		if err != nil {
 			return serviceResponses, err
 		}
@@ -153,7 +175,7 @@ func (s *SwaggerGenerator) findReqModelInFunc(pkgName, funcName string, rc crite
 	fun := pkg.Function{
 		Name: funcName,
 	}
-	err := findFunc(pkgName, funcName, &fun)
+	err := s.findFunc(pkgName, funcName, &fun)
 	if err != nil {
 		return err
 	}
@@ -167,26 +189,32 @@ func (s *SwaggerGenerator) findReqModelInFunc(pkgName, funcName string, rc crite
 	return nil
 }
 
-func (s *SwaggerGenerator) findServiceResponsesInFunc(pkgName, funcName string, rc criteria.CallCriteria) ([]ServiceResponse, error) {
-	serviceResponses := make([]ServiceResponse, 0)
+func (s *SwaggerGenerator) findServiceResponsesInFunc(pkgName, funcName string, rc criteria.ResponseCallCriteria) ([]pkg.ServiceResponse, error) {
+	serviceResponses := make([]pkg.ServiceResponse, 0)
 	fun := pkg.Function{
 		Name: funcName,
 	}
-	err := findFunc(pkgName, funcName, &fun)
+	err := s.findFunc(pkgName, funcName, &fun)
 	if err != nil {
 		return serviceResponses, err
 	}
-	lastPos := -1
-	var varType string
-	for err != nil {
-		modelResponse := ModelResponse{}
+	var lastPos token.Pos = -1
+	for {
+		modelResponse := pkg.ModelResponse{}
 		err = fun.FindResponseCallExpressionAfter(rc, &lastPos, &modelResponse)
-		pkgName, structName := pkg.TypeParts(varType)
-		requestModel.PkgName = pkgName
-		requestModel.Name = structName
-		serviceResponses = append(serviceResponses, requestModel)
+		if err != nil {
+			break
+		}
+		pkgName, structName := pkg.TypeParts(modelResponse.Type)
+		serviceResponses = append(serviceResponses, pkg.ServiceResponse{
+			Model: pkg.Struct{
+				PkgName: pkgName,
+				Name:    structName,
+			},
+			Code: modelResponse.Code,
+		})
 	}
-	if err != ErrNotFound {
+	if err != swagoErrors.ErrNotFound {
 		return serviceResponses, err
 	}
 	return serviceResponses, nil
@@ -201,6 +229,7 @@ func (s *SwaggerGenerator) findFunc(pkgName, funcName string, fun *pkg.Function)
 	if err != nil {
 		return err
 	}
+	return nil
 }
 
 func (s *SwaggerGenerator) getPkg(name string) *pkg.Pkg {
@@ -257,4 +286,20 @@ func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, logger *log.Logge
 // NewSwaggerGenerator creates a swagger generator that scans a whole project
 func NewSwaggerGenerator(rootPath, goPath string, logger *log.Logger) (*SwaggerGenerator, error) {
 	return NewSwaggerGeneratorWithBlacklist(rootPath, goPath, logger, defaultBlacklist)
+}
+
+func extractURLParameters(path string, r *regexp.Regexp) []*openapi2.Parameter {
+	foundPathParameters := make([]*openapi2.Parameter, 0)
+	found := r.FindAllStringSubmatch(path, -1)
+	for _, paramArr := range found {
+		foundPathParameters = append(foundPathParameters, &openapi2.Parameter{
+			In:   "path",
+			Name: paramArr[1],
+			// FIXME: detect the type somehow....maybe if the name has ID it should be an number
+			// or maybe let the user pass another regexp.
+			Type:     "string",
+			Required: true,
+		})
+	}
+	return foundPathParameters
 }

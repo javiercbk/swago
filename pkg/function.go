@@ -59,13 +59,6 @@ func (f Function) ListVariablesUntil(until token.Pos) []Variable {
 	return vars
 }
 
-// ModelResponse is a response model
-type ModelResponse struct {
-	Type string
-	Pos  token.Pos
-	Code string
-}
-
 // FindArgTypeCallExpression given a call expression it finds the type of the argument
 func (f Function) FindArgTypeCallExpression(callCriteria criteria.CallCriteria) (string, error) {
 	var foundAt token.Pos = -1
@@ -109,6 +102,13 @@ func (f Function) FindArgTypeCallExpression(callCriteria criteria.CallCriteria) 
 		}
 	}
 	return "", swagoErrors.ErrNotFound
+}
+
+// ModelResponse is a response model
+type ModelResponse struct {
+	Type string
+	Pos  token.Pos
+	Code string
 }
 
 // FindResponseCallExpressionAfter given a call expression it finds the type of the argument past a position

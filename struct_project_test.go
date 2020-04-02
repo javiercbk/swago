@@ -11,6 +11,7 @@ import (
 	"github.com/javiercbk/swago/encoding/swagger"
 
 	"github.com/getkin/kin-openapi/openapi2"
+	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/javiercbk/swago/ast"
 	"github.com/javiercbk/swago/criteria"
@@ -158,16 +159,24 @@ func TestGenerateForStructProject(t *testing.T) {
 				Consumes:   "application/json",
 			},
 		},
-		Response: []criteria.CallCriteria{
-			criteria.CallCriteria{
-				FuncName:   "SendJSONResponse",
-				Pkg:        "api",
-				ParamIndex: 2,
-				Produces:   "application/json",
+		Response: []criteria.ResponseCallCriteria{
+			criteria.ResponseCallCriteria{
+				CallCriteria: criteria.CallCriteria{
+					FuncName:   "SendJSONResponse",
+					Pkg:        "api",
+					ParamIndex: 2,
+					Produces:   "application/json",
+				},
+				CodeIndex: 3,
 			},
 		},
 	}
-	swaggerDoc := openapi2.Swagger{}
+	swaggerDoc := openapi2.Swagger{
+		Info: openapi3.Info{
+			Title:   "title",
+			Version: "1.0.0",
+		},
+	}
 	err = sg.GenerateSwaggerDoc(projectCriteria, &swaggerDoc)
 	if err != nil {
 		t.Fatalf("expected err to be nil but was %v", nil)

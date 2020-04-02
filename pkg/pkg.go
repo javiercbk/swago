@@ -179,7 +179,6 @@ func (file *File) compositeLitToRoute(com *ast.CompositeLit, route *Route, struc
 				case structRoute.PathField:
 					route.Path = val
 				case structRoute.HandlerField:
-
 					route.HandlerType = val
 				case structRoute.HTTPMethodField:
 					route.HTTPMethod = criteria.MatchHTTPMethod(val)
