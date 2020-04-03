@@ -1,8 +1,8 @@
 package swago
 
 import (
-	"bufio"
 	"go/token"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -16,12 +16,13 @@ import (
 	"github.com/javiercbk/swago/criteria"
 	swagoErrors "github.com/javiercbk/swago/errors"
 	"github.com/javiercbk/swago/pkg"
+	"golang.org/x/mod/modfile"
 )
 
 type modelType string
 
 const (
-	modFile = "go.mod"
+	modFileName = "go.mod"
 )
 
 var (
@@ -34,13 +35,15 @@ var (
 
 // SwaggerGenerator is able to navigate a project's code
 type SwaggerGenerator struct {
-	Blacklist  []*regexp.Regexp
-	Pkgs       []*pkg.Pkg
-	ModuleName string
-	RootPath   string
-	GoPath     string
-	logger     *log.Logger
-	routes     []pkg.Route
+	Blacklist     []*regexp.Regexp
+	Pkgs          []*pkg.Pkg
+	ModuleName    string
+	VendorFolders []string
+	module        *modfile.File
+	RootPath      string
+	GoPath        string
+	logger        *log.Logger
+	routes        []pkg.Route
 }
 
 // GenerateSwaggerDoc generates the swagger documentation
@@ -77,6 +80,66 @@ func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 	}
 	s.completeSwagger(projectCriterias, swagger)
 	return nil
+}
+
+func (s *SwaggerGenerator) loadExternalPkg(location string) error {
+	realPath := s.externalPkgPath(location)
+	if len(realPath) == 0 {
+		return swagoErrors.ErrNotFound
+	}
+	externalPkgs, err := pkg.AnalizeProjectWithBlacklist(realPath, s.logger, s.Blacklist)
+	if err != nil {
+		return err
+	}
+	s.Pkgs = append(s.Pkgs, externalPkgs...)
+	return nil
+}
+
+func (s *SwaggerGenerator) externalPkgPath(location string) string {
+	var basePath string
+	if len(s.ModuleName) > 0 {
+		for _, r := range s.module.Require {
+			modPathStr := r.Mod.Path
+			if strings.Contains(location, modPathStr) {
+				pkgName := ""
+				if len(location) > len(modPathStr) {
+					pkgName = location[len(modPathStr)+1:]
+				}
+				basePath = path.Join(s.GoPath, "pkg/mod", r.Mod.String(), pkgName)
+				break
+			}
+		}
+	} else {
+		if s.VendorFolders != nil {
+			for _, f := range s.VendorFolders {
+				vendorPkg := path.Join(f, location)
+				if folderExists(vendorPkg) {
+					basePath = vendorPkg
+				}
+				break
+			}
+		} else {
+			vendorPkg := path.Join(s.RootPath, "vendor", location)
+			if folderExists(vendorPkg) {
+				basePath = vendorPkg
+			} else {
+				goPathPkg := path.Join(s.GoPath, "src", location)
+				if folderExists(goPathPkg) {
+					basePath = goPathPkg
+				}
+			}
+		}
+
+	}
+	return basePath
+}
+
+func folderExists(folderPath string) bool {
+	fileStat, err := os.Stat(folderPath)
+	if err != nil {
+		return false
+	}
+	return fileStat.IsDir()
 }
 
 func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, swagger *openapi2.Swagger) error {
@@ -275,9 +338,8 @@ func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, logger *log.Logge
 		Blacklist: blacklist,
 		logger:    logger,
 	}
-	goModFilePath := path.Join(rootPath, modFile)
+	goModFilePath := path.Join(rootPath, modFileName)
 	logger.Printf("looking for module declaration in file %s\n", goModFilePath)
-	moduleName := ""
 	goModFile, err := os.Open(goModFilePath)
 	if err != nil {
 		_, ok := err.(*os.PathError)
@@ -287,22 +349,17 @@ func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, logger *log.Logge
 		}
 	} else {
 		defer goModFile.Close()
-		scanner := bufio.NewScanner(goModFile)
-		scanner.Split(bufio.ScanLines)
-		logger.Printf("reading file %s\n", goModFilePath)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.HasPrefix(line, "module") {
-				moduleName = line[7:]
-				break
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			logger.Printf("error reading file %s: %v\n", goModFilePath, err)
+		goModBytes, err := ioutil.ReadAll(goModFile)
+		if err != nil {
 			return generator, err
 		}
+		module, err := modfile.Parse(goModFilePath, goModBytes, nil)
+		if err != nil {
+			return generator, err
+		}
+		generator.ModuleName = module.Syntax.Name
+		generator.module = module
 	}
-	generator.ModuleName = moduleName
 	generator.Pkgs, err = pkg.AnalizeProjectWithBlacklist(rootPath, logger, blacklist)
 	return generator, err
 }
