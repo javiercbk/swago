@@ -68,6 +68,7 @@ type Criteria struct {
 	Request       []CallCriteria         `yaml:"request"`
 	Response      []ResponseCallCriteria `yaml:"response"`
 	ErrorResponse *openapi3.Schema       `yaml:"errorResponse"`
+	VendorFolders []string               `yaml:"vendorFolders"`
 }
 
 // Info is the info swagger mapping
@@ -107,9 +108,9 @@ type RouteCriteria struct {
 
 // ValidationExtractor are slices of regular expression that matches validations
 type ValidationExtractor struct {
-	Validation string           `yaml:"validation"`
-	Tag        []string         `yaml:"tag"`
-	TagRegexp  []*regexp.Regexp `yaml:"-"`
+	Validation string `yaml:"validation"`
+	// Tag        []string         `yaml:"tag"`
+	TagRegexp []*regexp.Regexp `yaml:"-"`
 }
 
 // CallCriteria contains all the information to match a function call with an argument
@@ -124,8 +125,8 @@ type CallCriteria struct {
 
 // ResponseCallCriteria contains all the information to match a response function call with an argument
 type ResponseCallCriteria struct {
-	CallCriteria
-	CodeIndex int `yaml:"codeIndex"`
+	CallCriteria `yaml:",inline"`
+	CodeIndex    int `yaml:"codeIndex"`
 }
 
 // Decoder is able to decode and validate a Criteria
@@ -160,6 +161,18 @@ func (decoder Decoder) ParseCriteriaFromYAML(r io.Reader, c *Criteria) error {
 				}
 			}
 			c.Routes[i].FuncRoute.NamedPathVarExtractorRegexp = namedPathVarExtractor
+		}
+	}
+	for i := range c.Request {
+		if c.Request[i].Validations != nil {
+			for k, v := range c.Request[i].Validations {
+				tagRegexp, err := regexp.Compile(v.Validation)
+				if err != nil {
+					decoder.Logger.Printf("error processing validation %s, could not compile regexp '%s': %v", k, v.Validation, err)
+				}
+				v.TagRegexp = []*regexp.Regexp{tagRegexp}
+				c.Request[i].Validations[k] = v
+			}
 		}
 	}
 	return nil

@@ -137,6 +137,11 @@ func (e *variableHelper) getLevel(v *Variable) *Variable {
 }
 
 func isGoType(t string) bool {
+	if strings.HasPrefix(t, "*") {
+		t = t[1:]
+	} else if strings.HasPrefix(t, "[]") {
+		t = t[2:]
+	}
 	switch t {
 	case goTypeBool:
 		return true
@@ -208,6 +213,8 @@ func rawFlattenType(n ast.Node, importMappings map[string]string) string {
 		return rawFlattenType(x.X, importMappings) + "." + x.Sel.Name
 	case *ast.CompositeLit:
 		return rawFlattenType(x.Type, importMappings)
+	case *ast.ArrayType:
+		return "[]" + rawFlattenType(x.Elt, importMappings)
 	default:
 		return ""
 	}
@@ -223,6 +230,17 @@ func TypeParts(selector string) (string, string) {
 }
 
 func swaggerType(t string) (string, string) {
+	if strings.HasPrefix(t, "*") {
+		t = t[1:]
+		return swaggerType(t)
+	} else if strings.HasPrefix(t, "[]") {
+		t = t[2:]
+		goType, _ := swaggerType(t)
+		if len(goType) > 0 {
+			return "array", goType
+		}
+		return "", ""
+	}
 	switch t {
 	case EmptyInterface:
 		return "object", ""

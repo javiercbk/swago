@@ -123,7 +123,7 @@ func (f Function) FindResponseCallExpressionAfter(callCriteria criteria.Response
 					fullName := flattenType(x.Fun, f.File.Pkg.Name, f.File.importMappings)
 					pkg, name := TypeParts(fullName)
 					// FIXME: should be allowed to continue and return a slice
-					if foundAt == -1 && pkg == callCriteria.Pkg && name == callCriteria.FuncName && len(x.Args) > callCriteria.ParamIndex {
+					if foundAt == -1 && pkg == callCriteria.Pkg && name == callCriteria.FuncName && callCriteria.ParamIndex >= 0 && len(x.Args) > callCriteria.ParamIndex {
 						varAST := x.Args[callCriteria.ParamIndex]
 						switch varExpr := varAST.(type) {
 						case *ast.UnaryExpr:
@@ -185,7 +185,7 @@ func (f Function) FindErrorResponseCallExpressionAfter(callCriteria criteria.Res
 					fullName := flattenType(x.Fun, f.File.Pkg.Name, f.File.importMappings)
 					pkg, name := TypeParts(fullName)
 					// FIXME: should be allowed to continue and return a slice
-					if foundAt == -1 && pkg == callCriteria.Pkg && name == callCriteria.FuncName && len(x.Args) > callCriteria.ParamIndex {
+					if foundAt == -1 && pkg == callCriteria.Pkg && name == callCriteria.FuncName && len(x.Args) > callCriteria.CodeIndex {
 						foundAt = x.Pos()
 						codeAST := x.Args[callCriteria.CodeIndex]
 						switch codeExpr := codeAST.(type) {
@@ -211,5 +211,5 @@ func (f Function) FindErrorResponseCallExpressionAfter(callCriteria criteria.Res
 	*pos = foundAt
 	modelResponse.Pos = foundAt
 	modelResponse.Code = code
-	return swagoErrors.ErrNotFound
+	return nil
 }

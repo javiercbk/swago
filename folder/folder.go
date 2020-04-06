@@ -33,7 +33,7 @@ func ListGoFiles(dir string, blacklist []*regexp.Regexp) ([]string, error) {
 		return files, err
 	}
 	for _, info := range filesInDir {
-		if !info.IsDir() && IsGoFile(info.Name()) {
+		if !info.IsDir() && IsGoFile(info.Name()) && !shouldIgnore(info.Name(), blacklist) {
 			files = append(files, info.Name())
 		}
 	}

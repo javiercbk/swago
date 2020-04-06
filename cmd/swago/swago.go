@@ -56,7 +56,7 @@ func main() {
 			Version: projectCriteria.Info.Version,
 		},
 	}
-	sg, err := swago.NewSwaggerGenerator(projectPath, projectPath, log)
+	sg, err := swago.NewSwaggerGenerator(projectPath, projectPath, projectCriteria.VendorFolders, log)
 	if err != nil {
 		log.Printf("error creating a swagger generator: %v", err)
 		os.Exit(1)

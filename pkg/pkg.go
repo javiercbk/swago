@@ -60,6 +60,7 @@ var (
 	defaultBlackList          = []*regexp.Regexp{
 		regexp.MustCompile(".*_test\\.go"),
 		regexp.MustCompile(".*" + string(os.PathSeparator) + "testdata" + string(os.PathSeparator) + ".*"),
+		regexp.MustCompile(".*" + string(os.PathSeparator) + "vendor" + string(os.PathSeparator) + ".*"),
 	}
 )
 
@@ -120,6 +121,7 @@ func (file *File) FindStruct(str *Struct) error {
 	for _, s := range file.Structs {
 		if s.Name == str.Name {
 			*str = s
+			str.File = file
 			return nil
 		}
 	}

@@ -1,12 +1,28 @@
 package pkg
 
 import (
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/getkin/kin-openapi/openapi2"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/javiercbk/swago/criteria"
 )
+
+var (
+	jsonNameExtractor = regexp.MustCompile(`json:"([a-zA-Z0-9_]+)[,"]`)
+)
+
+func extractParamName(fieldName string, fieldTag string) string {
+	found := jsonNameExtractor.FindAllStringSubmatch(fieldTag, -1)
+	if len(found) > 0 {
+		// returns matched expression in group
+		return found[0][1]
+	}
+	// first character to lower case
+	return strings.ToLower(fieldName[0:1]) + fieldName[1:]
+}
 
 // Field is a struct field
 type Field struct {
@@ -31,17 +47,26 @@ func (s *Struct) ToSwaggerSchema(parameter *openapi2.Parameter) error {
 	requiredProps := make([]string, 0)
 	s.addEmbeddedStruct()
 	for _, f := range s.Fields {
+		paramName := extractParamName(f.Name, f.Tag)
 		t, format := swaggerType(f.Type)
 		if extractBooleanValidation(criteria.RequiredValidation, f.Tag, s.CallCriteria) {
-			requiredProps = append(requiredProps, f.Name)
+			requiredProps = append(requiredProps, paramName)
 		}
 		if len(t) > 0 {
 			sch := &openapi3.Schema{
 				Type:         t,
-				Format:       format,
 				ExclusiveMin: extractBooleanValidation(criteria.ExclusiveMinValidation, f.Tag, s.CallCriteria),
 				ExclusiveMax: extractBooleanValidation(criteria.ExclusiveMaxValidation, f.Tag, s.CallCriteria),
 				Enum:         matchesInterfaceSlice(criteria.EnumValidation, f.Tag, s.CallCriteria),
+			}
+			if t != "array" {
+				sch.Format = format
+			} else {
+				sch.Items = &openapi3.SchemaRef{
+					Value: &openapi3.Schema{
+						Type: format,
+					},
+				}
 			}
 			schRef := &openapi3.SchemaRef{
 				Value: sch,
@@ -66,23 +91,26 @@ func (s *Struct) ToSwaggerSchema(parameter *openapi2.Parameter) error {
 			if patternOk {
 				sch.Pattern = pattern
 			}
-			properties[f.Name] = schRef
+			properties[paramName] = schRef
 		} else {
-			subStruct := Struct{}
+			structPkg, structName := TypeParts(f.Type)
+			subStruct := Struct{
+				PkgName: structPkg,
+				Name:    structName,
+			}
 			err := s.File.Pkg.Project.FindStruct(&subStruct)
 			if err != nil {
 				return err
 			}
 			subStruct.CallCriteria = s.CallCriteria
-			sch := &openapi3.Schema{}
 			err = subStruct.ToSwaggerSchema(nil)
 			if err != nil {
 				return err
 			}
 			schRef := &openapi3.SchemaRef{
-				Value: sch,
+				Value: subStruct.Schema,
 			}
-			properties[f.Name] = schRef
+			properties[paramName] = schRef
 		}
 	}
 	s.Schema = &openapi3.Schema{}
@@ -152,9 +180,9 @@ func matchesInterfaceSlice(validationName string, tag string, callCriteria crite
 	e, ok := callCriteria.Validations[validationName]
 	if ok {
 		for _, r := range e.TagRegexp {
-			found := r.FindStringSubmatch(tag)
+			found := r.FindAllStringSubmatch(tag, -1)
 			for _, f := range found {
-				enumItems = append(enumItems, f)
+				enumItems = append(enumItems, f[1])
 			}
 		}
 	}

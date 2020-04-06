@@ -70,10 +70,10 @@ func (s *SwaggerGenerator) GenerateSwaggerDoc(projectCriterias criteria.Criteria
 			serviceResponses := make([]pkg.ServiceResponse, 0)
 			for _, rc := range projectCriterias.Response {
 				responses, err := s.findResModels(pkgName, funcName, rc)
-				serviceResponses = append(serviceResponses, responses...)
 				if err != nil {
 					return err
 				}
+				serviceResponses = append(serviceResponses, responses...)
 			}
 			s.routes[i].ServiceResponses = serviceResponses
 		}
@@ -146,6 +146,10 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 	swagger.BasePath = projectCriterias.BasePath
 	swagger.Host = projectCriterias.Host
 	for _, r := range s.routes {
+		if len(r.HandlerType) == 0 {
+			// ignore routes with no handler
+			continue
+		}
 		parameter := &openapi2.Parameter{
 			In: "body",
 		}
@@ -163,6 +167,7 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 		swaggerResponses := make(map[string]*openapi2.Response)
 		for _, sResp := range r.ServiceResponses {
 			httpStatusCode, success := parseCode(sResp.Code)
+			httpStatusCodeStr := strconv.Itoa(httpStatusCode)
 			if httpStatusCode > 0 {
 				if success {
 					err := sResp.Model.ToSwaggerSchema(nil)
@@ -171,7 +176,7 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 					}
 					if err == nil {
 						// ignoring unknown codes
-						swaggerResponses[sResp.Code] = &openapi2.Response{
+						swaggerResponses[httpStatusCodeStr] = &openapi2.Response{
 							Description: http.StatusText(httpStatusCode),
 							Schema: &openapi3.SchemaRef{
 								Value: sResp.Model.Schema,
@@ -180,7 +185,7 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 					}
 
 				} else {
-					swaggerResponses[sResp.Code] = &openapi2.Response{
+					swaggerResponses[httpStatusCodeStr] = &openapi2.Response{
 						Description: http.StatusText(httpStatusCode),
 						Schema: &openapi3.SchemaRef{
 							Value: projectCriterias.ErrorResponse,
@@ -225,14 +230,15 @@ func (s *SwaggerGenerator) findResModels(pkgName, funcName string, callCriteria 
 		return serviceResponses, err
 	}
 	for i := range serviceResponses {
-
-		pkgFound := s.getPkg(serviceResponses[i].Model.PkgName)
-		if pkgFound == nil {
-			return serviceResponses, swagoErrors.ErrNotFound
-		}
-		err = pkgFound.FindStruct(&serviceResponses[i].Model)
-		if err != nil {
-			return serviceResponses, err
+		if len(serviceResponses[i].Model.Name) > 0 {
+			pkgFound := s.getPkg(serviceResponses[i].Model.PkgName)
+			if pkgFound == nil {
+				return serviceResponses, swagoErrors.ErrNotFound
+			}
+			err = pkgFound.FindStruct(&serviceResponses[i].Model)
+			if err != nil {
+				return serviceResponses, err
+			}
 		}
 	}
 	return serviceResponses, nil
@@ -330,7 +336,7 @@ func (s *SwaggerGenerator) getPkg(name string) *pkg.Pkg {
 }
 
 // NewSwaggerGeneratorWithBlacklist creates a swagger generator that scans a whole project except for any matching a given blacklist
-func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, logger *log.Logger, blacklist []*regexp.Regexp) (*SwaggerGenerator, error) {
+func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, vendorFolders []string, logger *log.Logger, blacklist []*regexp.Regexp) (*SwaggerGenerator, error) {
 	var err error
 	generator := &SwaggerGenerator{
 		RootPath:  rootPath,
@@ -361,12 +367,24 @@ func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, logger *log.Logge
 		generator.module = module
 	}
 	generator.Pkgs, err = pkg.AnalizeProjectWithBlacklist(rootPath, logger, blacklist)
-	return generator, err
+	if err != nil {
+		return generator, err
+	}
+	project := pkg.Project{
+		Pkgs:      generator.Pkgs,
+		RootPath:  rootPath,
+		Blacklist: blacklist,
+	}
+	for i := range generator.Pkgs {
+		generator.Pkgs[i].Project = &project
+	}
+	generator.VendorFolders = vendorFolders
+	return generator, nil
 }
 
 // NewSwaggerGenerator creates a swagger generator that scans a whole project
-func NewSwaggerGenerator(rootPath, goPath string, logger *log.Logger) (*SwaggerGenerator, error) {
-	return NewSwaggerGeneratorWithBlacklist(rootPath, goPath, logger, defaultBlacklist)
+func NewSwaggerGenerator(rootPath, goPath string, vendorFolders []string, logger *log.Logger) (*SwaggerGenerator, error) {
+	return NewSwaggerGeneratorWithBlacklist(rootPath, goPath, vendorFolders, logger, defaultBlacklist)
 }
 
 func extractNamedPathVarParameters(path string, r *regexp.Regexp) []*openapi2.Parameter {
