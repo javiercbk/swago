@@ -165,7 +165,8 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 			}
 		}
 		swaggerResponses := make(map[string]*openapi2.Response)
-		for _, sResp := range r.ServiceResponses {
+		for i := range r.ServiceResponses {
+			sResp := r.ServiceResponses[i]
 			httpStatusCode, success := parseCode(sResp.Code)
 			httpStatusCodeStr := strconv.Itoa(httpStatusCode)
 			if httpStatusCode > 0 {
@@ -281,32 +282,34 @@ func (s *SwaggerGenerator) findServiceResponsesInFunc(pkgName, funcName string, 
 		return serviceResponses, err
 	}
 	var lastPos token.Pos = -1
-	for {
-		modelResponse := pkg.ModelResponse{}
-		err = fun.FindResponseCallExpressionAfter(rc, &lastPos, &modelResponse)
-		if err != nil {
-			break
+	if rc.ParamIndex > 0 {
+		for {
+			modelResponse := pkg.ModelResponse{}
+			err = fun.FindResponseCallExpressionAfter(rc, &lastPos, &modelResponse)
+			if err != nil {
+				break
+			}
+			pkgName, structName := pkg.TypeParts(modelResponse.Type)
+			serviceResponses = append(serviceResponses, pkg.ServiceResponse{
+				Model: pkg.Struct{
+					PkgName: pkgName,
+					Name:    structName,
+				},
+				Code: modelResponse.Code,
+			})
 		}
-		pkgName, structName := pkg.TypeParts(modelResponse.Type)
-		serviceResponses = append(serviceResponses, pkg.ServiceResponse{
-			Model: pkg.Struct{
-				PkgName: pkgName,
-				Name:    structName,
-			},
-			Code: modelResponse.Code,
-		})
-	}
-	lastPos = -1
-	// FIXME: should be done in the same loop as above
-	for {
-		modelResponse := pkg.ModelResponse{}
-		err = fun.FindErrorResponseCallExpressionAfter(rc, &lastPos, &modelResponse)
-		if err != nil {
-			break
+	} else {
+		// FIXME: should be done in the same loop as above
+		for {
+			modelResponse := pkg.ModelResponse{}
+			err = fun.FindErrorResponseCallExpressionAfter(rc, &lastPos, &modelResponse)
+			if err != nil {
+				break
+			}
+			serviceResponses = append(serviceResponses, pkg.ServiceResponse{
+				Code: modelResponse.Code,
+			})
 		}
-		serviceResponses = append(serviceResponses, pkg.ServiceResponse{
-			Code: modelResponse.Code,
-		})
 	}
 	if err != swagoErrors.ErrNotFound {
 		return serviceResponses, err
