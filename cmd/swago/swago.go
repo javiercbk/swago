@@ -10,6 +10,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi2"
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/go-git/go-git/v5"
 	"github.com/javiercbk/swago"
 	"github.com/javiercbk/swago/encoding/swagger"
 )
@@ -52,9 +53,29 @@ func main() {
 	defer swagoFile.Close()
 	swaggerDoc := openapi2.Swagger{
 		Info: openapi3.Info{
-			Title:   projectCriteria.Info.Title,
-			Version: projectCriteria.Info.Version,
+			Title: projectCriteria.Info.Title,
 		},
+	}
+	if len(projectCriteria.Info.Version) == 0 {
+		r, err := git.PlainOpen(projectPath)
+		if err != nil {
+			log.Printf("error reading git repository at '%s': %v", projectPath, err)
+			os.Exit(1)
+		}
+		cIter, err := r.Log(&git.LogOptions{})
+		if err != nil {
+			log.Printf("error reading commit logs from repository at '%s': %v", projectPath, err)
+			os.Exit(1)
+		}
+		defer cIter.Close()
+		commit, err := cIter.Next()
+		if err != nil {
+			log.Printf("error reading commit logs from repository at '%s': %v", projectPath, err)
+			os.Exit(1)
+		}
+		swaggerDoc.Info.Version = commit.Hash.String()
+	} else {
+		swaggerDoc.Info.Version = projectCriteria.Info.Version
 	}
 	sg, err := swago.NewSwaggerGenerator(projectPath, projectPath, projectCriteria.VendorFolders, log)
 	if err != nil {

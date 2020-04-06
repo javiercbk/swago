@@ -166,12 +166,14 @@ func (decoder Decoder) ParseCriteriaFromYAML(r io.Reader, c *Criteria) error {
 	for i := range c.Request {
 		if c.Request[i].Validations != nil {
 			for k, v := range c.Request[i].Validations {
-				tagRegexp, err := regexp.Compile(v.Validation)
-				if err != nil {
-					decoder.Logger.Printf("error processing validation %s, could not compile regexp '%s': %v", k, v.Validation, err)
+				if len(v.Validation) > 0 {
+					tagRegexp, err := regexp.Compile(v.Validation)
+					if err != nil {
+						decoder.Logger.Printf("error processing validation %s, could not compile regexp '%s': %v", k, v.Validation, err)
+					}
+					v.TagRegexp = []*regexp.Regexp{tagRegexp}
+					c.Request[i].Validations[k] = v
 				}
-				v.TagRegexp = []*regexp.Regexp{tagRegexp}
-				c.Request[i].Validations[k] = v
 			}
 		}
 	}
