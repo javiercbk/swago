@@ -135,7 +135,7 @@ func TestGenerateForStructProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error getting absolute path of %s: %v", structProjectPath, err)
 	}
-	sg, err := NewSwaggerGeneratorWithBlacklist(projectPath, projectPath, log.New(ioutil.Discard, "", log.LstdFlags), []*regexp.Regexp{})
+	sg, err := NewSwaggerGeneratorWithBlacklist(projectPath, projectPath, nil, log.New(ioutil.Discard, "", log.LstdFlags), []*regexp.Regexp{})
 	if err != nil {
 		t.Fatalf("error creating a swagger generator: %v", err)
 	}
