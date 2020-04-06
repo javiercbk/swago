@@ -1,0 +1,80 @@
+swagger: "2.0"
+info:
+  title: title
+  version: 1.0.0
+paths:
+  "/handler/1":
+    post:
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+          name: V1Request1
+          required: true
+          schema:
+            type: object
+            properties:
+              Cool:
+                type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+            properties:
+              "Handler1Response":
+                type: string
+  "/handler2/nice":
+    get:
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+          name: V1Request2
+          required: true
+          schema:
+            type: object
+            properties:
+              Int:
+                format: int32
+                type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+            properties:
+              OtherResponseVar:
+                format: int32
+                type: integer
+  "/handler/{name}/3":
+    put:
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: path
+          type: string
+          name: name
+          required: true
+        - in: body
+          name: V1Request3
+          required: true
+          schema:
+            type: object
+            properties:
+              Name:
+                type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+            properties:
+              AAA:
+                type: string
