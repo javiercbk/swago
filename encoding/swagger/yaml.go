@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -23,6 +24,25 @@ func MarshalYAML(swagger openapi2.Swagger, w io.Writer) error {
 	if !isEmptyInfo(swagger.Info) {
 		marshalInfo(swagger.Info, ew)
 	}
+	if !isEmptyExternalDocs(swagger.ExternalDocs) {
+		marshalExternalDocs(swagger.ExternalDocs, 0, ew)
+	}
+	if !isEmptyStrSlice(swagger.Schemes) {
+		writeStrSlice("schemes", swagger.Schemes, 0, ew)
+	}
+	if !isEmptyString(swagger.Host) {
+		writeStringProp("host", swagger.Host, 0, ew)
+	}
+	if !isEmptyString(swagger.BasePath) {
+		writeStringProp("basePath", swagger.BasePath, 0, ew)
+	}
+	if !isEmptyParameters(swagger.Parameters) {
+		writeObject("parameters", 0, ew)
+		for def, param := range swagger.Parameters {
+			writeObject(def, 1, ew)
+			marshalParameter(param, 2, ew)
+		}
+	}
 	if !isEmptyPaths(swagger.Paths) {
 		writeObject("paths", 0, ew)
 		for url, pathItem := range swagger.Paths {
@@ -35,14 +55,6 @@ func MarshalYAML(swagger openapi2.Swagger, w io.Writer) error {
 		for def, schemaRef := range swagger.Definitions {
 			writeObject(def, 1, ew)
 			marshalSchemaRef(schemaRef, 2, ew)
-		}
-
-	}
-	if !isEmptyParameters(swagger.Parameters) {
-		writeObject("parameters", 0, ew)
-		for def, param := range swagger.Parameters {
-			writeObject(def, 1, ew)
-			marshalParameter(param, 2, ew)
 		}
 	}
 	if !isEmptyResponses(swagger.Responses) {
@@ -264,8 +276,14 @@ func marshalOperation(operation *openapi2.Operation, ew *errorWriter) {
 	}
 	if !isEmptyResponses(operation.Responses) {
 		writeObject("responses", 3, ew)
-		for code, r := range operation.Responses {
-			marshalResponse(code, r, 4, ew)
+		keys := make([]string, 0, len(operation.Responses))
+		for k := range operation.Responses {
+			keys = append(keys, k)
+		}
+		// I could have inserted each key sorted...but well
+		sort.Strings(keys)
+		for _, code := range keys {
+			marshalResponse(code, operation.Responses[code], 4, ew)
 		}
 	}
 	if !isEmptySecurityPtr(operation.Security) {

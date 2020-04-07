@@ -53,7 +53,8 @@ func main() {
 	defer swagoFile.Close()
 	swaggerDoc := openapi2.Swagger{
 		Info: openapi3.Info{
-			Title: projectCriteria.Info.Title,
+			Title:       projectCriteria.Info.Title,
+			Description: projectCriteria.Info.Description,
 		},
 	}
 	if len(projectCriteria.Info.Version) == 0 {

@@ -145,6 +145,7 @@ func folderExists(folderPath string) bool {
 func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, swagger *openapi2.Swagger) error {
 	swagger.BasePath = projectCriterias.BasePath
 	swagger.Host = projectCriterias.Host
+	swagger.Parameters = projectCriterias.Parameters
 	for _, r := range s.routes {
 		if len(r.HandlerType) == 0 {
 			// ignore routes with no handler

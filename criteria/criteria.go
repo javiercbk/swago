@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi2"
 	"github.com/getkin/kin-openapi/openapi3"
 	"gopkg.in/yaml.v2"
 )
@@ -61,20 +62,22 @@ var (
 
 // Criteria contains all the information to match a Handler, a request Parser and a Response marshaler
 type Criteria struct {
-	BasePath      string                 `yaml:"basePath"`
-	Host          string                 `yaml:"host"`
-	Info          Info                   `yaml:"info"`
-	Routes        []RouteCriteria        `yaml:"routes"`
-	Request       []CallCriteria         `yaml:"request"`
-	Response      []ResponseCallCriteria `yaml:"response"`
-	ErrorResponse *openapi3.Schema       `yaml:"errorResponse"`
-	VendorFolders []string               `yaml:"vendorFolders"`
+	BasePath      string                         `yaml:"basePath"`
+	Host          string                         `yaml:"host"`
+	Info          Info                           `yaml:"info"`
+	Parameters    map[string]*openapi2.Parameter `yaml:"parameters,omitempty"`
+	Routes        []RouteCriteria                `yaml:"routes"`
+	Request       []CallCriteria                 `yaml:"request"`
+	Response      []ResponseCallCriteria         `yaml:"response"`
+	ErrorResponse *openapi3.Schema               `yaml:"errorResponse"`
+	VendorFolders []string                       `yaml:"vendorFolders"`
 }
 
 // Info is the info swagger mapping
 type Info struct {
-	Title   string `yaml:"title"`
-	Version string `yaml:"version"`
+	Title       string `yaml:"title"`
+	Version     string `yaml:"version"`
+	Description string `yaml:"description"`
 }
 
 // FuncRoute matches a route that is defined as a function call
