@@ -93,15 +93,24 @@ type FuncRoute struct {
 	ChildRoute                  *FuncRoute     `yaml:"childRoute,omitempty"`
 }
 
+// ParameterMatcher matches parameters in a struct route
+type ParameterMatcher struct {
+	Always        bool           `yaml:"always"`
+	Field         string         `yaml:"field"`
+	Matches       string         `yaml:"matches"`
+	MatchesRegExp *regexp.Regexp `yaml:"-"`
+}
+
 // StructRoute matches a route that is defined as a struct
 type StructRoute struct {
-	Name                        string         `yaml:"name"`
-	Pkg                         string         `yaml:"pkg"`
-	PathField                   string         `yaml:"pathField"`
-	NamedPathVarExtractor       string         `yaml:"namedPathVarExtractor"`
-	NamedPathVarExtractorRegexp *regexp.Regexp `yaml:"-"`
-	HandlerField                string         `yaml:"handlerField"`
-	HTTPMethodField             string         `yaml:"httpMethodField"`
+	Name                        string                      `yaml:"name"`
+	Pkg                         string                      `yaml:"pkg"`
+	PathField                   string                      `yaml:"pathField"`
+	NamedPathVarExtractor       string                      `yaml:"namedPathVarExtractor"`
+	NamedPathVarExtractorRegexp *regexp.Regexp              `yaml:"-"`
+	HandlerField                string                      `yaml:"handlerField"`
+	HTTPMethodField             string                      `yaml:"httpMethodField"`
+	Parameters                  map[string]ParameterMatcher `yaml:"parameters"`
 }
 
 // RouteCriteria contains all the information to find a Route declaration
@@ -157,6 +166,18 @@ func (decoder Decoder) ParseCriteriaFromYAML(r io.Reader, c *Criteria) error {
 				}
 			}
 			c.Routes[i].StructRoute.NamedPathVarExtractorRegexp = namedPathVarExtractor
+			if c.Routes[i].StructRoute.Parameters != nil {
+				for k, v := range c.Routes[i].StructRoute.Parameters {
+					if len(v.Matches) > 0 && !v.Always {
+						matchesRegexp, err := regexp.Compile(v.Matches)
+						if err != nil {
+							return err
+						}
+						v.MatchesRegExp = matchesRegexp
+						c.Routes[i].StructRoute.Parameters[k] = v
+					}
+				}
+			}
 		} else if c.Routes[i].FuncRoute != nil {
 			namedPathVarExtractor := defaultURLNamedPathVarExtractor
 			if len(c.Routes[i].FuncRoute.NamedPathVarExtractor) > 0 {
