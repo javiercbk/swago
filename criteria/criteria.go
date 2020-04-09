@@ -62,15 +62,16 @@ var (
 
 // Criteria contains all the information to match a Handler, a request Parser and a Response marshaler
 type Criteria struct {
-	BasePath      string                         `yaml:"basePath"`
-	Host          string                         `yaml:"host"`
-	Info          Info                           `yaml:"info"`
-	Parameters    map[string]*openapi2.Parameter `yaml:"parameters,omitempty"`
-	Routes        []RouteCriteria                `yaml:"routes"`
-	Request       []CallCriteria                 `yaml:"request"`
-	Response      []ResponseCallCriteria         `yaml:"response"`
-	ErrorResponse *openapi3.Schema               `yaml:"errorResponse"`
-	VendorFolders []string                       `yaml:"vendorFolders"`
+	DefinitionPrefix string                         `yaml:"definitionPrefix"`
+	BasePath         string                         `yaml:"basePath"`
+	Host             string                         `yaml:"host"`
+	Info             Info                           `yaml:"info"`
+	Parameters       map[string]*openapi2.Parameter `yaml:"parameters,omitempty"`
+	Routes           []RouteCriteria                `yaml:"routes"`
+	Request          []CallCriteria                 `yaml:"request"`
+	Response         []ResponseCallCriteria         `yaml:"response"`
+	ErrorResponse    *openapi3.Schema               `yaml:"errorResponse"`
+	VendorFolders    []string                       `yaml:"vendorFolders"`
 }
 
 // Info is the info swagger mapping

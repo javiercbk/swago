@@ -146,15 +146,28 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 	swagger.BasePath = projectCriterias.BasePath
 	swagger.Host = projectCriterias.Host
 	swagger.Parameters = projectCriterias.Parameters
+	swagger.Definitions = make(map[string]*openapi3.SchemaRef)
 	for _, r := range s.routes {
 		if len(r.HandlerType) == 0 {
 			// ignore routes with no handler
 			continue
 		}
+		err := r.RequestModel.ToSwaggerSchema()
 		parameter := &openapi2.Parameter{
-			In: "body",
+			In:       "body",
+			Name:     r.RequestModel.Name,
+			Required: true,
+			Schema:   &openapi3.SchemaRef{},
 		}
-		err := r.RequestModel.ToSwaggerSchema(parameter)
+		if len(projectCriterias.DefinitionPrefix) == 0 {
+			parameter.Schema.Value = r.RequestModel.Schema
+		} else {
+			definitionName := projectCriterias.DefinitionPrefix + r.RequestModel.Name
+			parameter.Schema.Ref = "#/definitions/" + projectCriterias.DefinitionPrefix + r.RequestModel.Name
+			swagger.Definitions[definitionName] = &openapi3.SchemaRef{
+				Value: r.RequestModel.Schema,
+			}
+		}
 		if err != nil {
 			return err
 		}
@@ -172,27 +185,42 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 			httpStatusCodeStr := strconv.Itoa(httpStatusCode)
 			if httpStatusCode > 0 {
 				if success {
-					err := sResp.Model.ToSwaggerSchema(nil)
+					err := sResp.Model.ToSwaggerSchema()
 					if err != nil {
 						return err
 					}
 					if err == nil {
 						// ignoring unknown codes
-						swaggerResponses[httpStatusCodeStr] = &openapi2.Response{
+						resp := &openapi2.Response{
 							Description: http.StatusText(httpStatusCode),
-							Schema: &openapi3.SchemaRef{
+							Schema:      &openapi3.SchemaRef{},
+						}
+						if len(projectCriterias.DefinitionPrefix) == 0 || len(sResp.Model.Name) == 0 {
+							resp.Schema.Value = sResp.Model.Schema
+						} else {
+							definitionName := projectCriterias.DefinitionPrefix + sResp.Model.Name
+							resp.Schema.Ref = "#/definitions/" + definitionName
+							swagger.Definitions[definitionName] = &openapi3.SchemaRef{
 								Value: sResp.Model.Schema,
-							},
+							}
+						}
+						swaggerResponses[httpStatusCodeStr] = resp
+					}
+				} else {
+					resp := &openapi2.Response{
+						Description: http.StatusText(httpStatusCode),
+						Schema:      &openapi3.SchemaRef{},
+					}
+					if len(projectCriterias.DefinitionPrefix) == 0 || len(sResp.Model.Name) > 0 {
+						resp.Schema.Value = sResp.Model.Schema
+					} else {
+						definitionName := projectCriterias.DefinitionPrefix + "ErrorResponse"
+						resp.Schema.Ref = "#/definitions/" + definitionName
+						swagger.Definitions[definitionName] = &openapi3.SchemaRef{
+							Value: projectCriterias.ErrorResponse,
 						}
 					}
-
-				} else {
-					swaggerResponses[httpStatusCodeStr] = &openapi2.Response{
-						Description: http.StatusText(httpStatusCode),
-						Schema: &openapi3.SchemaRef{
-							Value: projectCriterias.ErrorResponse,
-						},
-					}
+					swaggerResponses[httpStatusCodeStr] = resp
 				}
 			}
 		}

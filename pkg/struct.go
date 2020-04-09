@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getkin/kin-openapi/openapi2"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/javiercbk/swago/criteria"
 )
@@ -42,7 +41,7 @@ type Struct struct {
 }
 
 // ToSwaggerSchema populates a given swagger schema with the data from the struct
-func (s *Struct) ToSwaggerSchema(parameter *openapi2.Parameter) error {
+func (s *Struct) ToSwaggerSchema() error {
 	properties := make(map[string]*openapi3.SchemaRef)
 	requiredProps := make([]string, 0)
 	s.addEmbeddedStruct()
@@ -103,7 +102,7 @@ func (s *Struct) ToSwaggerSchema(parameter *openapi2.Parameter) error {
 				return err
 			}
 			subStruct.CallCriteria = s.CallCriteria
-			err = subStruct.ToSwaggerSchema(nil)
+			err = subStruct.ToSwaggerSchema()
 			if err != nil {
 				return err
 			}
@@ -117,13 +116,6 @@ func (s *Struct) ToSwaggerSchema(parameter *openapi2.Parameter) error {
 	s.Schema.Type = swaggerObjectType
 	s.Schema.Required = requiredProps
 	s.Schema.Properties = properties
-	if parameter != nil {
-		parameter.Schema = &openapi3.SchemaRef{
-			Value: s.Schema,
-		}
-		parameter.Name = s.Name
-		parameter.Required = true
-	}
 	return nil
 }
 

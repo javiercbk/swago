@@ -15,7 +15,10 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
-var escapePropNameRegExp = regexp.MustCompile("^[a-zA-Z_]+$")
+var (
+	escapePropNameRegExp = regexp.MustCompile("^[a-zA-Z_0-9]+$")
+	escapeStrValRegExp   = regexp.MustCompile("[#]")
+)
 
 // MarshalYAML marshals a Swagger definition to YAML
 func MarshalYAML(swagger openapi2.Swagger, w io.Writer) error {
@@ -94,6 +97,14 @@ func escapePropName(name string) string {
 	return escapedName
 }
 
+func escapeStrVal(val string) string {
+	escapedName := val
+	if escapeStrValRegExp.MatchString(val) {
+		escapedName = "\"" + strings.ReplaceAll(val, "\"", "\\\"") + "\""
+	}
+	return escapedName
+}
+
 func writeRawStringProp(name, value string, indent int, ew *errorWriter) {
 	hasNewLine := strings.Contains(value, "\n")
 	if hasNewLine {
@@ -108,7 +119,7 @@ func writeRawStringProp(name, value string, indent int, ew *errorWriter) {
 
 func writeStringProp(name, value string, indent int, ew *errorWriter) {
 	escapedName := escapePropName(name)
-	writeRawStringProp(escapedName, value, indent, ew)
+	writeRawStringProp(escapedName, escapeStrVal(value), indent, ew)
 }
 
 func writeStrSlice(name string, values []string, indent int, ew *errorWriter) {
