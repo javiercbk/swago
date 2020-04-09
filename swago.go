@@ -181,10 +181,10 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 		swaggerResponses := make(map[string]*openapi2.Response)
 		for i := range r.ServiceResponses {
 			sResp := r.ServiceResponses[i]
-			httpStatusCode, success := parseCode(sResp.Code)
+			httpStatusCode, _ := parseCode(sResp.Code)
 			httpStatusCodeStr := strconv.Itoa(httpStatusCode)
 			if httpStatusCode > 0 {
-				if success {
+				if len(sResp.ModelExtractor.Name) == 0 {
 					err := sResp.Model.ToSwaggerSchema()
 					if err != nil {
 						return err
@@ -195,7 +195,7 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 							Description: http.StatusText(httpStatusCode),
 							Schema:      &openapi3.SchemaRef{},
 						}
-						if len(projectCriterias.DefinitionPrefix) == 0 || len(sResp.Model.Name) == 0 {
+						if len(projectCriterias.DefinitionPrefix) == 0 {
 							resp.Schema.Value = sResp.Model.Schema
 						} else {
 							definitionName := projectCriterias.DefinitionPrefix + sResp.Model.Name
@@ -207,17 +207,28 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 						swaggerResponses[httpStatusCodeStr] = resp
 					}
 				} else {
-					resp := &openapi2.Response{
-						Description: http.StatusText(httpStatusCode),
-						Schema:      &openapi3.SchemaRef{},
-					}
-					if len(projectCriterias.DefinitionPrefix) == 0 || len(sResp.Model.Name) > 0 {
-						resp.Schema.Value = sResp.Model.Schema
-					} else {
-						definitionName := projectCriterias.DefinitionPrefix + "ErrorResponse"
-						resp.Schema.Ref = "#/definitions/" + definitionName
+					var resp *openapi2.Response
+					staticModel, ok := projectCriterias.StaticModels[sResp.ModelExtractor.Name]
+					if ok {
+						definitionName := projectCriterias.DefinitionPrefix + sResp.ModelExtractor.Name
+						resp = &openapi2.Response{
+							Description: http.StatusText(httpStatusCode),
+							Schema: &openapi3.SchemaRef{
+								Ref: "#/definitions/" + definitionName,
+							},
+						}
 						swagger.Definitions[definitionName] = &openapi3.SchemaRef{
-							Value: projectCriterias.ErrorResponse,
+							Value: staticModel,
+						}
+					} else {
+						// when no model was found set a dummy response
+						resp = &openapi2.Response{
+							Description: http.StatusText(httpStatusCode),
+							Schema: &openapi3.SchemaRef{
+								Value: &openapi3.Schema{
+									Type: "object",
+								},
+							},
 						}
 					}
 					swaggerResponses[httpStatusCodeStr] = resp
@@ -254,7 +265,7 @@ func (s *SwaggerGenerator) findReqModel(pkgName, funcName string, callCriteria c
 	return nil
 }
 
-func (s *SwaggerGenerator) findResModels(pkgName, funcName string, callCriteria criteria.ResponseCallCriteria) ([]pkg.ServiceResponse, error) {
+func (s *SwaggerGenerator) findResModels(pkgName, funcName string, callCriteria criteria.CallCriteria) ([]pkg.ServiceResponse, error) {
 	serviceResponses, err := s.findServiceResponsesInFunc(pkgName, funcName, callCriteria)
 	if err != nil && err != swagoErrors.ErrNotFound {
 		return serviceResponses, err
@@ -301,7 +312,7 @@ func (s *SwaggerGenerator) findReqModelInFunc(pkgName, funcName string, rc crite
 	return nil
 }
 
-func (s *SwaggerGenerator) findServiceResponsesInFunc(pkgName, funcName string, rc criteria.ResponseCallCriteria) ([]pkg.ServiceResponse, error) {
+func (s *SwaggerGenerator) findServiceResponsesInFunc(pkgName, funcName string, rc criteria.CallCriteria) ([]pkg.ServiceResponse, error) {
 	serviceResponses := make([]pkg.ServiceResponse, 0)
 	fun := pkg.Function{
 		Name: funcName,
@@ -311,7 +322,7 @@ func (s *SwaggerGenerator) findServiceResponsesInFunc(pkgName, funcName string, 
 		return serviceResponses, err
 	}
 	var lastPos token.Pos = -1
-	if rc.ParamIndex > 0 {
+	if len(rc.ModelExtractor.Name) == 0 {
 		for {
 			modelResponse := pkg.ModelResponse{}
 			err = fun.FindResponseCallExpressionAfter(rc, &lastPos, &modelResponse)
@@ -319,13 +330,15 @@ func (s *SwaggerGenerator) findServiceResponsesInFunc(pkgName, funcName string, 
 				break
 			}
 			pkgName, structName := pkg.TypeParts(modelResponse.Type)
-			serviceResponses = append(serviceResponses, pkg.ServiceResponse{
+			sr := pkg.ServiceResponse{
 				Model: pkg.Struct{
 					PkgName: pkgName,
 					Name:    structName,
 				},
-				Code: modelResponse.Code,
-			})
+				Code:           modelResponse.Code,
+				ModelExtractor: rc.ModelExtractor,
+			}
+			serviceResponses = append(serviceResponses, sr)
 		}
 	} else {
 		// FIXME: should be done in the same loop as above
@@ -335,9 +348,11 @@ func (s *SwaggerGenerator) findServiceResponsesInFunc(pkgName, funcName string, 
 			if err != nil {
 				break
 			}
-			serviceResponses = append(serviceResponses, pkg.ServiceResponse{
-				Code: modelResponse.Code,
-			})
+			sr := pkg.ServiceResponse{
+				Code:           modelResponse.Code,
+				ModelExtractor: rc.ModelExtractor,
+			}
+			serviceResponses = append(serviceResponses, sr)
 		}
 	}
 	if err != swagoErrors.ErrNotFound {

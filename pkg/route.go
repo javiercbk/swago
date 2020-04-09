@@ -1,6 +1,10 @@
 package pkg
 
-import "regexp"
+import (
+	"regexp"
+
+	"github.com/javiercbk/swago/criteria"
+)
 
 // Route is web route found in the folder
 type Route struct {
@@ -19,6 +23,7 @@ type Route struct {
 
 // ServiceResponse is the response from a service
 type ServiceResponse struct {
-	Code  string
-	Model Struct
+	Code           string
+	ModelExtractor criteria.ModelExtractor
+	Model          Struct
 }

@@ -67,8 +67,8 @@ func (f Function) FindArgTypeCallExpression(callCriteria criteria.CallCriteria) 
 			case *ast.CallExpr:
 				fullName := flattenType(x.Fun, f.File.Pkg.Name, f.File.importMappings)
 				pkg, name := TypeParts(fullName)
-				if foundAt == -1 && pkg == callCriteria.Pkg && name == callCriteria.FuncName && len(x.Args) > callCriteria.ParamIndex {
-					varAST := x.Args[callCriteria.ParamIndex]
+				if foundAt == -1 && pkg == callCriteria.Pkg && name == callCriteria.FuncName && len(x.Args) > callCriteria.ModelExtractor.ParamIndex {
+					varAST := x.Args[callCriteria.ModelExtractor.ParamIndex]
 					switch varExpr := varAST.(type) {
 					case *ast.UnaryExpr:
 						var ok bool
@@ -110,7 +110,7 @@ type ModelResponse struct {
 }
 
 // FindResponseCallExpressionAfter given a call expression it finds the type of the argument past a position
-func (f Function) FindResponseCallExpressionAfter(callCriteria criteria.ResponseCallCriteria, pos *token.Pos, modelResponse *ModelResponse) error {
+func (f Function) FindResponseCallExpressionAfter(callCriteria criteria.CallCriteria, pos *token.Pos, modelResponse *ModelResponse) error {
 	//FIXME: need to re/write this and FindArgTypeCallExpression function
 	var foundAt token.Pos = -1
 	var ident *ast.Ident
@@ -123,8 +123,8 @@ func (f Function) FindResponseCallExpressionAfter(callCriteria criteria.Response
 					fullName := flattenType(x.Fun, f.File.Pkg.Name, f.File.importMappings)
 					pkg, name := TypeParts(fullName)
 					// FIXME: should be allowed to continue and return a slice
-					if foundAt == -1 && pkg == callCriteria.Pkg && name == callCriteria.FuncName && callCriteria.ParamIndex >= 0 && len(x.Args) > callCriteria.ParamIndex {
-						varAST := x.Args[callCriteria.ParamIndex]
+					if foundAt == -1 && pkg == callCriteria.Pkg && name == callCriteria.FuncName && len(callCriteria.ModelExtractor.Name) == 0 && len(x.Args) > callCriteria.ModelExtractor.ParamIndex {
+						varAST := x.Args[callCriteria.ModelExtractor.ParamIndex]
 						switch varExpr := varAST.(type) {
 						case *ast.UnaryExpr:
 							var ok bool
@@ -173,7 +173,7 @@ func (f Function) FindResponseCallExpressionAfter(callCriteria criteria.Response
 }
 
 // FindErrorResponseCallExpressionAfter given a call expression it finds the type of the argument past a position
-func (f Function) FindErrorResponseCallExpressionAfter(callCriteria criteria.ResponseCallCriteria, pos *token.Pos, modelResponse *ModelResponse) error {
+func (f Function) FindErrorResponseCallExpressionAfter(callCriteria criteria.CallCriteria, pos *token.Pos, modelResponse *ModelResponse) error {
 	//FIXME: need to re/write this and FindArgTypeCallExpression function
 	var foundAt token.Pos = -1
 	var code string

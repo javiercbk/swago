@@ -69,8 +69,8 @@ type Criteria struct {
 	Parameters       map[string]*openapi2.Parameter `yaml:"parameters,omitempty"`
 	Routes           []RouteCriteria                `yaml:"routes"`
 	Request          []CallCriteria                 `yaml:"request"`
-	Response         []ResponseCallCriteria         `yaml:"response"`
-	ErrorResponse    *openapi3.Schema               `yaml:"errorResponse"`
+	Response         []CallCriteria                 `yaml:"response"`
+	StaticModels     map[string]*openapi3.Schema    `yaml:"staticModels"`
 	VendorFolders    []string                       `yaml:"vendorFolders"`
 }
 
@@ -117,20 +117,21 @@ type ValidationExtractor struct {
 	TagRegexp []*regexp.Regexp `yaml:"-"`
 }
 
-// CallCriteria contains all the information to match a function call with an argument
-type CallCriteria struct {
-	Pkg         string                         `yaml:"pkg"`
-	FuncName    string                         `yaml:"funcName"`
-	ParamIndex  int                            `yaml:"paramIndex"`
-	Validations map[string]ValidationExtractor `yaml:"validations"`
-	Consumes    string                         `yaml:"consumes"`
-	Produces    string                         `yaml:"produces"`
+// ModelExtractor defines where to extract a model
+type ModelExtractor struct {
+	ParamIndex int    `yaml:"paramIndex"`
+	Name       string `yaml:"name"`
 }
 
-// ResponseCallCriteria contains all the information to match a response function call with an argument
-type ResponseCallCriteria struct {
-	CallCriteria `yaml:",inline"`
-	CodeIndex    int `yaml:"codeIndex"`
+// CallCriteria contains all the information to match a function call with an argument
+type CallCriteria struct {
+	Pkg            string                         `yaml:"pkg"`
+	FuncName       string                         `yaml:"funcName"`
+	ModelExtractor ModelExtractor                 `yaml:"modelExtractor"`
+	CodeIndex      int                            `yaml:"codeIndex"`
+	Validations    map[string]ValidationExtractor `yaml:"validations"`
+	Consumes       string                         `yaml:"consumes"`
+	Produces       string                         `yaml:"produces"`
 }
 
 // Decoder is able to decode and validate a Criteria
