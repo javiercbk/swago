@@ -62,16 +62,17 @@ var (
 
 // Criteria contains all the information to match a Handler, a request Parser and a Response marshaler
 type Criteria struct {
-	DefinitionPrefix string                         `yaml:"definitionPrefix"`
-	BasePath         string                         `yaml:"basePath"`
-	Host             string                         `yaml:"host"`
-	Info             Info                           `yaml:"info"`
-	Parameters       map[string]*openapi2.Parameter `yaml:"parameters,omitempty"`
-	Routes           []RouteCriteria                `yaml:"routes"`
-	Request          []CallCriteria                 `yaml:"request"`
-	Response         []CallCriteria                 `yaml:"response"`
-	StaticModels     map[string]*openapi3.Schema    `yaml:"staticModels"`
-	VendorFolders    []string                       `yaml:"vendorFolders"`
+	DefinitionPrefix    string                              `yaml:"definitionPrefix"`
+	BasePath            string                              `yaml:"basePath"`
+	Host                string                              `yaml:"host"`
+	Info                Info                                `yaml:"info"`
+	Parameters          map[string]*openapi2.Parameter      `yaml:"parameters,omitempty"`
+	SecurityDefinitions map[string]*openapi2.SecurityScheme `yaml:"securityDefinitions,omitempty"`
+	Routes              []RouteCriteria                     `yaml:"routes"`
+	Request             []CallCriteria                      `yaml:"request"`
+	Response            []CallCriteria                      `yaml:"response"`
+	StaticModels        map[string]*openapi3.Schema         `yaml:"staticModels"`
+	VendorFolders       []string                            `yaml:"vendorFolders"`
 }
 
 // Info is the info swagger mapping
@@ -111,6 +112,7 @@ type StructRoute struct {
 	HandlerField                string                      `yaml:"handlerField"`
 	HTTPMethodField             string                      `yaml:"httpMethodField"`
 	Parameters                  map[string]ParameterMatcher `yaml:"parameters"`
+	Security                    map[string]ParameterMatcher `yaml:"security"`
 }
 
 // RouteCriteria contains all the information to find a Route declaration
@@ -175,6 +177,19 @@ func (decoder Decoder) ParseCriteriaFromYAML(r io.Reader, c *Criteria) error {
 						}
 						v.MatchesRegExp = matchesRegexp
 						c.Routes[i].StructRoute.Parameters[k] = v
+					}
+				}
+				// TODO: Extract this to a function
+			}
+			if c.Routes[i].StructRoute.Security != nil {
+				for k, v := range c.Routes[i].StructRoute.Security {
+					if len(v.Matches) > 0 && !v.Always {
+						matchesRegexp, err := regexp.Compile(v.Matches)
+						if err != nil {
+							return err
+						}
+						v.MatchesRegExp = matchesRegexp
+						c.Routes[i].StructRoute.Security[k] = v
 					}
 				}
 			}

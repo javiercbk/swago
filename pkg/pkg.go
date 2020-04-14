@@ -168,6 +168,8 @@ func (file *File) matchesStructRoute(com *ast.CompositeLit, structRoute criteria
 
 func (file *File) compositeLitToRoute(com *ast.CompositeLit, route *Route, structRoute criteria.StructRoute) {
 	route.Struct = make(map[string]string)
+	route.MatchedParameters = make(map[string]bool)
+	route.MatchedSecurityDefinitions = make(map[string]bool)
 	for _, e := range com.Elts {
 		kv, ok := e.(*ast.KeyValueExpr)
 		if ok {
@@ -183,6 +185,16 @@ func (file *File) compositeLitToRoute(com *ast.CompositeLit, route *Route, struc
 					val = flattenedType
 				}
 				route.Struct[ident.Name] = val
+				for key, p := range structRoute.Parameters {
+					if p.Always || (p.Field == ident.Name && p.MatchesRegExp.MatchString(val)) {
+						route.MatchedParameters[key] = true
+					}
+				}
+				for key, p := range structRoute.Security {
+					if p.Always || (p.Field == ident.Name && p.MatchesRegExp.MatchString(val)) {
+						route.MatchedSecurityDefinitions[key] = true
+					}
+				}
 				switch ident.Name {
 				case structRoute.PathField:
 					route.Path = val

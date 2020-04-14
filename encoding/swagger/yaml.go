@@ -273,6 +273,9 @@ func marshalOperation(operation *openapi2.Operation, ew *errorWriter) {
 	if !isEmptyStrSlice(operation.Produces) {
 		writeStrSlice("produces", operation.Produces, 3, ew)
 	}
+	if !isEmptySecurityPtr(operation.Security) {
+		marshalInterface("security", *operation.Security, 3, ew)
+	}
 	if !isEmptyStrSlice(operation.Tags) {
 		writeStrSlice("tags", operation.Tags, 3, ew)
 	}
@@ -296,9 +299,6 @@ func marshalOperation(operation *openapi2.Operation, ew *errorWriter) {
 		for _, code := range keys {
 			marshalResponse(code, operation.Responses[code], 4, ew)
 		}
-	}
-	if !isEmptySecurityPtr(operation.Security) {
-		marshalInterface("security", *operation.Security, 3, ew)
 	}
 }
 

@@ -146,12 +146,14 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 	swagger.BasePath = projectCriterias.BasePath
 	swagger.Host = projectCriterias.Host
 	swagger.Parameters = projectCriterias.Parameters
+	swagger.SecurityDefinitions = projectCriterias.SecurityDefinitions
 	swagger.Definitions = make(map[string]*openapi3.SchemaRef)
 	for _, r := range s.routes {
 		if len(r.HandlerType) == 0 {
 			// ignore routes with no handler
 			continue
 		}
+
 		err := r.RequestModel.ToSwaggerSchema()
 		parameter := &openapi2.Parameter{
 			In:       "body",
@@ -237,13 +239,17 @@ func (s *SwaggerGenerator) completeSwagger(projectCriterias criteria.Criteria, s
 		}
 		parameters := make([]*openapi2.Parameter, 0, 2)
 		urlParameters := extractNamedPathVarParameters(r.Path, r.NamedPathVarExtractor)
+		additionalParams := additionalParameters(projectCriterias.Parameters, r.MatchedParameters)
 		parameters = append(parameters, urlParameters...)
+		parameters = append(parameters, additionalParams...)
 		parameters = append(parameters, parameter)
+		security := matchedSecurity(projectCriterias.SecurityDefinitions, r.MatchedSecurityDefinitions)
 		swagger.AddOperation(r.Path, r.HTTPMethod, &openapi2.Operation{
 			Consumes:   []string{r.RequestModel.CallCriteria.Consumes},
 			Produces:   []string{produces},
 			Parameters: parameters,
 			Responses:  swaggerResponses,
+			Security:   &security,
 		})
 	}
 	return nil
@@ -432,6 +438,37 @@ func NewSwaggerGeneratorWithBlacklist(rootPath, goPath string, vendorFolders []s
 // NewSwaggerGenerator creates a swagger generator that scans a whole project
 func NewSwaggerGenerator(rootPath, goPath string, vendorFolders []string, logger *log.Logger) (*SwaggerGenerator, error) {
 	return NewSwaggerGeneratorWithBlacklist(rootPath, goPath, vendorFolders, logger, defaultBlacklist)
+}
+
+func additionalParameters(parameters map[string]*openapi2.Parameter, matched map[string]bool) []*openapi2.Parameter {
+	params := make([]*openapi2.Parameter, 0, len(matched))
+	for key, val := range matched {
+		if val {
+			_, ok := parameters[key]
+			if ok {
+				params = append(params, &openapi2.Parameter{
+					Ref: "#/parameters/" + key,
+				})
+			}
+		}
+	}
+	return params
+}
+
+func matchedSecurity(securityDefinitions map[string]*openapi2.SecurityScheme, matched map[string]bool) openapi2.SecurityRequirements {
+	security := make(openapi2.SecurityRequirements, 0, len(matched))
+	for key, val := range matched {
+		if val {
+			_, ok := securityDefinitions[key]
+			if ok {
+				// TODO: add the necesary array iteme here
+				s := make(map[string][]string)
+				s[key] = make([]string, 0)
+				security = append(security, s)
+			}
+		}
+	}
+	return security
 }
 
 func extractNamedPathVarParameters(path string, r *regexp.Regexp) []*openapi2.Parameter {
